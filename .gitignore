@@ -41,13 +41,15 @@ logs/
 src_back.png
 back_nearest.png
 
-# --- keep our shippable artifacts (override the blanket rules above) ---
-!dist/
-!dist/*.bps
-!dist/*.sav
 
 # third-party tool archives (RGBDS prebuilt) — not vendored
 tools/*.zip
 # scratch screenshots
 rekey_frame.png
 *_frame.png
+
+# dist: track ONLY the BPS patch (no binaries/zips/saves in the repo)
+!dist/
+dist/*
+!dist/*.bps
+dist/release/
