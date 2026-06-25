@@ -87,16 +87,15 @@ build would use prefix `Pokemon_Yellow_Stock` so its `.sav` never collides.
 |---|---|
 | `Pokemon_Yellow_Extended.exe` | the recompiled extended game |
 | `Pokemon_Yellow_Extended.bps` | stock→extended patch (`dist/Pokemon_Yellow_Extended.bps`) |
-| `Pokemon_Yellow_Extended.sav` | *(optional)* bundled new-game save: 3 starters at Lv5 |
-| `libGLESv2.dll`, `libEGL.dll` | ANGLE runtime (GL) |
+| `*.dll` (23) | SDL2, ANGLE (libEGL/libGLESv2), curl, and their deps |
 
 First launch: pick your stock Yellow ROM → `<yourrom>.extended.gbc` is generated
-and booted (cached for next time).
+and booted (cached for next time). Then NEW GAME as usual.
 
-> The bundled save is **extended-only**. Stock Yellow would reject it (the
-> Pokédex flag arrays are 2 bytes larger, so the checksum won't validate — it
-> fails safe to "file data destroyed", never a garbled party). The annotated
-> per-build save filenames make cross-loading impossible anyway.
+> No save is bundled. A clean "new game + 3 starters at Lv5" save can be
+> generated with `synth_starter_save.py` if desired; it would be extended-only
+> (stock Yellow rejects it safely — the larger Pokédex flag arrays change the
+> save layout/checksum).
 
 > When publishing, this is released as **PokemonYellowRecomp** (the deliverable
 > is the recomp + BPS; the decomp is the build-time tool that produces the

@@ -6,7 +6,21 @@ Tracked issues for the extended Pokémon Yellow build. Newest first.
 
 ## #1 — Back sprites of back-ported Gen 2 Pokémon look blurry
 
-**Status:** Open (deferred — acceptable workaround in place)
+**Status:** ✅ RESOLVED in v0.0.2 (native 48×48 back sprites)
+**Severity:** Cosmetic
+
+**Fix shipped:** the "proposed solution" below was implemented. Back-ported mon
+now ship their native **48×48 (6×6)** Gen 2 back sprite, and `LoadMonBackPic`
+(`engine/battle/init_battle.asm`, applied via `patches/engine.patch`) detects a
+6-tile-wide back and renders it through the front sprite's center-and-merge path
+instead of the 4×4-only `ScaleSpriteByTwo` — no downscale, no re-upscale, fully
+crisp. Vanilla 4×4 backs are untouched.
+Gotcha that bit us first: `wSpriteWidth`/`wSpriteHeight` are stored as
+**tiles×8 (bytes)**, not tiles — so the detection compares `6*8` and converts
+bytes→tiles (`>>3`) before handing width/height to `LoadUncompressedSpriteData`.
+
+<details><summary>Original report (for reference)</summary>
+
 **Severity:** Cosmetic
 **Affects:** The 9 injected Johto-line mon (Chikorita…Feraligatr) in **battle** (the
 player-facing back sprite). Front sprites (party/Pokédex/status) are crisp and
@@ -70,3 +84,5 @@ and on-model, but still 32×32 detail and requires sourcing/drawing the art.
 - `engine/battle/scale_sprites.asm` `ScaleSpriteByTwo`
 - `home/pics.asm` `UncompressMonSprite` / `LoadUncompressedSpriteData`
 - TECHNICAL_NOTES.md §2.5 (Gen 2 back-port sprite conversion)
+
+</details>

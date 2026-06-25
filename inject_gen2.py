@@ -8,11 +8,13 @@ Gen1-only movesets; sprites cropped/resized/recolored to Gen1 format.
 New mon get internal indexes $BF-$C7 (>= $99) so the pic-bank resolver in
 home/pics.asm is extended to route them to a new "Pics Gen2" bank.
 """
-import os, sys
+import os, sys, subprocess
 from PIL import Image
 
-PY = os.path.join(os.path.dirname(__file__), "pokeyellow")
-PC = os.path.join(os.path.dirname(__file__), "pokecrystal")
+HERE = os.path.dirname(os.path.abspath(__file__))
+PY = os.path.join(HERE, "pokeyellow")
+PC = os.path.join(HERE, "pokecrystal")
+ENGINE_PATCH = os.path.join(HERE, "patches", "engine.patch")
 
 GRASS_TMHM = "\ttmhm TOXIC, BODY_SLAM, TAKE_DOWN, DOUBLE_EDGE, MEGA_DRAIN, SOLARBEAM, MIMIC, DOUBLE_TEAM, REFLECT, BIDE, REST, SUBSTITUTE, CUT"
 FIRE_TMHM  = "\ttmhm TOXIC, BODY_SLAM, TAKE_DOWN, DOUBLE_EDGE, FIRE_BLAST, MIMIC, DOUBLE_TEAM, BIDE, REST, SUBSTITUTE, STRENGTH"
@@ -101,6 +103,25 @@ def append(relpath, block, guard):
         print(f"  skip (already injected): {relpath}"); return
     if not s.endswith("\n"): s += "\n"
     write(p, s + block); print(f"  appended: {relpath}")
+
+def apply_engine_patch():
+    """Apply patches/engine.patch (the manual engine edits that aren't simple
+    table inserts: GetName index-ceiling fix, stack/layout for the bigger
+    Pokedex flag arrays, and the native 48x48 back-sprite path). Idempotent."""
+    if not os.path.exists(ENGINE_PATCH):
+        print("  !! patches/engine.patch missing"); sys.exit(1)
+    # already applied?
+    if subprocess.run(["git", "apply", "--reverse", "--check", ENGINE_PATCH],
+                      cwd=PY, capture_output=True).returncode == 0:
+        print("  skip (engine patch already applied)"); return
+    r = subprocess.run(["git", "apply", ENGINE_PATCH], cwd=PY, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  !! engine patch failed to apply:\n{r.stderr}"); sys.exit(1)
+    print("  applied patches/engine.patch (GetName fix, stack/layout, 48x48 backs)")
+
+# ---- 0. engine patches (non-table edits) ----
+print("engine patches:")
+apply_engine_patch()
 
 # ---- 1. constants ----
 print("constants:")
@@ -243,7 +264,13 @@ for m in MONS:
     fr = Image.open(os.path.join(PC, f"gfx/pokemon/{m['f']}/front.png"))
     W = fr.width
     to_gray4(fr.crop((0, 0, W, W))).save(os.path.join(PY, f"gfx/pokemon/front/{m['f']}.png"))
-    bk = Image.open(os.path.join(PC, f"gfx/pokemon/{m['f']}/back.png"))
-    to_gray4(bk, (32, 32)).save(os.path.join(PY, f"gfx/pokemon/back/{m['f']}b.png"))
+    # Back: keep Gen 2's NATIVE 48x48 (6x6 tiles) — no downscale. LoadMonBackPic
+    # detects the 6x6 dimension and renders it without the vanilla 2x upscale, so
+    # there's no downscale+re-upscale blur (see engine/battle/init_battle.asm).
+    # Force exactly 48x48 by centering on a white canvas (no scaling).
+    bk = Image.open(os.path.join(PC, f"gfx/pokemon/{m['f']}/back.png")).convert("RGBA").convert("L")
+    canvas = Image.new("L", (48, 48), 255)
+    canvas.paste(bk, ((48 - bk.width) // 2, (48 - bk.height) // 2))
+    to_gray4(canvas).save(os.path.join(PY, f"gfx/pokemon/back/{m['f']}b.png"))
 print("  wrote 9 front + 9 back PNGs")
 print("DONE.")

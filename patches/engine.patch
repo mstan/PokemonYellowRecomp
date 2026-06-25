@@ -1,0 +1,100 @@
+diff --git a/engine/battle/init_battle.asm b/engine/battle/init_battle.asm
+index 15dbb3d..bd1dca8 100644
+--- a/engine/battle/init_battle.asm
++++ b/engine/battle/init_battle.asm
+@@ -167,9 +167,37 @@ LoadMonBackPic:
+ 	call ClearScreenArea
+ 	ld hl,  wMonHBackSprite - wMonHeader
+ 	call UncompressMonSprite
++; Vanilla back sprites are 4x4 tiles and get doubled by ScaleSpriteByTwo to fill
++; the 7x7 display. Back-ported Gen 2 mon ship a native 6x6 (48x48) back instead:
++; for those, skip the 2x upscale and center+merge at native resolution (the same
++; path front sprites use), avoiding the downscale+re-upscale blur. UncompressMon-
++; Sprite set wSpriteWidth from the .pic's dim byte. NOTE: UncompressSpriteData
++; stores wSpriteWidth/wSpriteHeight as tiles*8 (bytes per column), not tiles —
++; so a 6x6 back reads as 48 (6*8), and ScaleSpriteByTwo's hard 4x4 assumption
++; would scramble it. Detect the 6-tile width and render native instead.
++	ld a, [wSpriteWidth]
++	cp 6 * 8                ; 6-tile-wide back (back-ported Gen 2)?
++	jr z, .nativeBackPic
+ 	predef ScaleSpriteByTwo
+ 	ld de, vBackPic
+ 	call InterlaceMergeSpriteBuffers ; combine the two buffers to a single 2bpp sprite
++	jr .copyToVRAM
++.nativeBackPic
++; LoadUncompressedSpriteData wants width in a's low nybble and height in c's
++; high nybble, both in TILES — so convert bytes->tiles (>>3).
++	ld a, [wSpriteHeight]
++	srl a
++	srl a
++	srl a                   ; height in tiles
++	swap a                  ; height in high nybble
++	ld c, a
++	ld a, [wSpriteWidth]
++	srl a
++	srl a
++	srl a                   ; width in tiles (low nybble)
++	ld de, vBackPic
++	call LoadUncompressedSpriteData ; centers w x h into the 7x7 buffer + merges
++.copyToVRAM
+ 	ld hl, vSprites
+ 	ld de, vBackPic
+ 	ld c, (2 * SPRITEBUFFERSIZE) / 16 ; count of 16-byte chunks to be copied
+diff --git a/home/names2.asm b/home/names2.asm
+index f58287a..af6a110 100644
+--- a/home/names2.asm
++++ b/home/names2.asm
+@@ -18,16 +18,17 @@ GetName::
+ 	ld a, [wNameListIndex]
+ 	ld [wNamedObjectIndex], a
+ 
+-	; TM names are separate from item names.
+-	; BUG: This applies to all names instead of just items.
+-	ASSERT NUM_POKEMON_INDEXES < HM01, \
+-		"A bug in GetName will get TM/HM names for Pokémon above ${x:HM01}."
+-	ASSERT NUM_ATTACKS < HM01, \
+-		"A bug in GetName will get TM/HM names for moves above ${x:HM01}."
+-	ASSERT NUM_TRAINERS < HM01, \
+-		"A bug in GetName will get TM/HM names for trainers above ${x:HM01}."
++	; TM/HM names are generated rather than stored, but ONLY for the item
++	; name list. The original code applied this to every name list, which
++	; capped Pokemon/move/trainer indexes below HM01 (the $C4 ceiling). Gating
++	; on ITEM_NAME fixes that bug so the Pokedex can extend past 190 indexes.
++	ld a, [wNameListType]
++	cp ITEM_NAME
++	jr nz, .notMachine
++	ld a, [wNamedObjectIndex]
+ 	cp HM01
+ 	jp nc, GetMachineName
++.notMachine
+ 
+ 	ldh a, [hLoadedROMBank]
+ 	push af
+diff --git a/layout.link b/layout.link
+index a035e74..d3df5ba 100644
+--- a/layout.link
++++ b/layout.link
+@@ -240,7 +240,7 @@ WRAM0
+ 	"Main Data"
+ 	"Current Box Data"
+ 	"CGB Palette Data"
+-	org $df15
++	org $df17 ; +2 from $df15 for the larger 160-mon Pokedex flag arrays
+ 	"Stack"
+ VRAM $0
+ 	"VRAM"
+diff --git a/ram/wram.asm b/ram/wram.asm
+index 62ef1c4..99f4c24 100644
+--- a/ram/wram.asm
++++ b/ram/wram.asm
+@@ -2523,7 +2523,9 @@ wBGPPalsBuffer:: ds NUM_ACTIVE_PALS * PAL_SIZE
+ SECTION "Stack", WRAM0
+ 
+ ; the stack grows downward
+-	ds $eb - 1
++; (trimmed by 2 bytes to make room for the larger Pokedex owned/seen flag
++;  arrays now that NUM_POKEMON is 160; 233 bytes of stack is ample for Gen1)
++	ds $eb - 3
+ wStack:: db
+ 
+ ENDSECTION
