@@ -1,0 +1,17 @@
+# Recompile the MODIFIED (160-Pokémon) Pokémon Yellow decomp ROM with gbrecomp,
+# closing the loop: pret decomp -> hack -> ROM -> static recompile -> native runner.
+[rom]
+path = "pokeyellow/pokeyellow.gbc"        # our injected 160-mon ROM (sha 8efa12df)
+output_dir = "recomp"
+runtime_dir = "../../gb-recompiled/runtime"  # relative to the generated dir (recomp/)
+# Prefix is annotated so every derived filename says WHAT it is: the exe
+# (Pokemon_Yellow_Extended.exe), the save (save_id -> Pokemon_Yellow_Extended.sav),
+# and the auto-patch lookup (Pokemon_Yellow_Extended.bps). A future stock build
+# would use output_prefix = "Pokemon_Yellow_Stock" so saves never collide.
+output_prefix = "Pokemon_Yellow_Extended"
+
+[options]
+aggressive_scan = true
+emit_comments = true
+# No CRC hooks -> the launcher verifies the runtime ROM against the SHA-256
+# the recompiler embeds from this exact ROM (so run it with the same .gbc).

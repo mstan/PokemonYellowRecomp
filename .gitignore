@@ -1,0 +1,53 @@
+# PokemonYellowRecomp — .gitignore
+# RULE: never commit copyrighted ROMs or anything derived that contains them.
+# A BPS patch contains ONLY our added content (diff), not the ROM — it is safe
+# to ship/commit. Built ROMs, saves with ROM-derived data, and generated/build
+# trees are all excluded.
+
+# --- ROMs (copyrighted — users supply their own) ---
+*.gb
+*.gbc
+*.sgb
+roms/
+
+# --- third-party build deps (cloned/submodule'd, not vendored) ---
+pokeyellow/
+pokecrystal/
+tools/rgbds/
+
+# --- recompiler output + native build trees ---
+recomp/
+*.o
+*.obj
+*.2bpp
+*.pic
+*.sym
+*.map
+
+# --- runtime/user state ---
+*.sav
+*.rtc
+*.state*
+rom.cfg
+runtime_prefs.ini
+imgui.ini
+keybinds.ini
+logs/
+*.ppm
+*.log
+
+# --- scratch ---
+*_preview.png
+src_back.png
+back_nearest.png
+
+# --- keep our shippable artifacts (override the blanket rules above) ---
+!dist/
+!dist/*.bps
+!dist/*.sav
+
+# third-party tool archives (RGBDS prebuilt) — not vendored
+tools/*.zip
+# scratch screenshots
+rekey_frame.png
+*_frame.png
