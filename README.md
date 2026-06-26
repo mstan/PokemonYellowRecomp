@@ -119,6 +119,21 @@ Variant resolution: `YELLOW_VARIANT` env → first line of `yellow.cfg` →
 layout) or from `recomp[_stock]/build/` (dev layout). `yellow.exe`/`yellow.cfg`
 are build artifacts (gitignored); the source + a default cfg live in `launcher/`.
 
+**Build & package scripts** (`scripts/`):
+
+```bash
+scripts/build.sh extended    # reset → inject → ROM → recompile → native (full 251 dex)
+scripts/build.sh stock       # reset → ROM → recompile → native (vanilla 151)
+scripts/package.sh extended  # → dist/Pokemon_Yellow_Extended_v0.0.3.zip (standalone)
+scripts/package.sh stock     # → dist/Pokemon_Yellow_Stock_v0.0.3.zip
+```
+
+Each `.zip` is a self-contained run folder (exe + the 23-DLL SDL/ANGLE/curl
+runtime + its ROM + a relative `rom.cfg` + `run.bat`), verified to launch under a
+clean `PATH`. **These zips are PRIVATE** — they bundle the ROM (the stock ROM is
+literally copyrighted Yellow; the extended one is ROM-derivative), so `dist/` is
+gitignored and never pushed. Build them locally; don't redistribute.
+
 > A clean "new game + 3 starters" save can be generated with
 > `synth_starter_save.py`, and the validation save (party + full PC + complete
 > Pokédex) with `fill_dex_save.py`. Both are **extended-only** — stock Yellow
