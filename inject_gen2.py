@@ -80,6 +80,18 @@ MONS = [
    tx=("It rams foes with","its huge body and","powerful tail.")),
 ]
 
+# ---- Johto dex 161+ : data generated from pokecrystal (see gen2_data.py) ----
+# Internal index space is 1 byte capped at $FE ($FF = party-list terminator);
+# FERALIGATR sits at $C7, so $C8-$FE gives 55 contiguous slots = dex 161-215.
+# The upper Johto (216-251) needs MissingNo-gap reuse, a later sub-phase.
+# Override the range for incremental testing via GEN2_DEX_LO / GEN2_DEX_HI.
+import gen2_data
+_LO = int(os.environ.get("GEN2_DEX_LO", "161"))
+_HI = int(os.environ.get("GEN2_DEX_HI", "215"))
+_STARTERS = [m["C"] for m in MONS]
+MONS += gen2_data.build_mons(list(range(_LO, _HI + 1)), extra_species=_STARTERS)
+print(f"MONS: {len(MONS)} total ({len(_STARTERS)} starters + dex {_LO}-{_HI})")
+
 def read(p):
     with open(p, encoding="utf-8") as fh: return fh.read()
 def write(p, s):
@@ -119,9 +131,53 @@ def apply_engine_patch():
         print(f"  !! engine patch failed to apply:\n{r.stderr}"); sys.exit(1)
     print("  applied patches/engine.patch (GetName fix, stack/layout, 48x48 backs)")
 
+def size_pokedex_wram():
+    """The Pokedex owned/seen arrays (2x flag_array NUM_POKEMON) grow with the
+    dex. engine.patch hardcodes the 160-mon delta (+2); recompute it from the
+    ACTUAL count so any batch size links. Vanilla: NUM_POKEMON=151 -> 19 bytes
+    each, Stack org=$df15, stack `ds $eb - 1`. Move the Stack org UP by the
+    extra bytes and shrink the stack the same amount so it still ends at $dfff.
+    Idempotent (regex recomputes the same value)."""
+    import math, re
+    num_pokemon = 151 + len(MONS)
+    grow = 2 * (math.ceil(num_pokemon / 8) - 19)  # bytes beyond vanilla
+    org = 0xdf15 + grow
+    lp = os.path.join(PY, "layout.link"); ls = read(lp)
+    ls2 = re.sub(r"org \$df[0-9a-fA-F]{2}([^\n]*)",
+                 f"org ${org:04x} ; Stack start, +{grow} for {num_pokemon}-mon Pokedex", ls, count=1)
+    if ls2 != ls: write(lp, ls2)
+    wp = os.path.join(PY, "ram/wram.asm"); ws = read(wp)
+    ws2 = re.sub(r"ds \$eb - \d+", f"ds $eb - {1 + grow}", ws, count=1)
+    if ws2 != ws: write(wp, ws2)
+    print(f"  sized Pokedex WRAM: NUM_POKEMON={num_pokemon}, +{grow}B "
+          f"(Stack org=${org:04x}, stack=ds $eb - {1 + grow})")
+
+def relocate_growing_tables():
+    """base_stats outgrows its shared ROMX bank ("Battle Engine 6") at full-dex
+    sizes. It is reached via BANK(BaseStats) (an explicit far load in
+    GetMonHeader), so it is safe to move into its own floating ROMX section;
+    the linker re-packs the freed code and rgbfix grows the ROM. Idempotent.
+
+    NOTE: dex_entries.asm is deliberately NOT relocated. PokedexEntryPointers
+    AND the per-mon entry blocks are read with DIRECT (non-banked) loads while
+    pokedex.asm's own bank is mapped (see engine/menus/pokedex.asm ~L539-650),
+    so the data must stay co-located with that code. bank10 has ~11KB free, so
+    the larger table fits inline. Moving it elsewhere reads garbage -> garbled
+    height/weight and spreading corruption."""
+    mp = os.path.join(PY, "main.asm"); ms = read(mp)
+    anchor = '\nSECTION "Battle Core", ROMX'
+    if 'SECTION "Base Stats"' not in ms:
+        ms = ms.replace('INCLUDE "data/pokemon/base_stats.asm"\n', '', 1)
+        ms = ms.replace(anchor,
+            '\nSECTION "Base Stats", ROMX\n\nINCLUDE "data/pokemon/base_stats.asm"\n'
+            + anchor, 1)
+        write(mp, ms); print("  relocated base_stats -> own bank")
+
 # ---- 0. engine patches (non-table edits) ----
 print("engine patches:")
 apply_engine_patch()
+size_pokedex_wram()
+relocate_growing_tables()
 
 # ---- 1. constants ----
 print("constants:")
@@ -143,14 +199,14 @@ for m in MONS:
 \t;   hp  atk  def  spd  spc
 
 \tdb {m['ty'][0]}, {m['ty'][1]} ; type
-\tdb 45 ; catch rate
+\tdb {m.get('cr', 45)} ; catch rate
 \tdb {m['exp']} ; base exp
 
 \tINCBIN "gfx/pokemon/front/{m['f']}.pic", 0, 1 ; sprite dimensions
 \tdw {m['Camel']}PicFront, {m['Camel']}PicBack
 
 \tdb {', '.join(m['l1'])} ; level 1 learnset
-\tdb GROWTH_MEDIUM_SLOW ; growth rate
+\tdb {m.get('growth', 'GROWTH_MEDIUM_SLOW')} ; growth rate
 
 \t; tm/hm learnset
 {m['tmhm']}
@@ -159,14 +215,14 @@ for m in MONS:
 \tdb 0 ; padding
 """
     write(os.path.join(PY, f"data/pokemon/base_stats/{m['f']}.asm"), body)
-print("  wrote 9 base_stats files")
+print(f"  wrote {len(MONS)} base_stats files")
 
 # ---- 3. names / cries / dex_order / palettes / menu_icons (table appends) ----
 print("tables:")
 insert_before("data/pokemon/names.asm", "\tassert_table_length NUM_POKEMON_INDEXES",
-    "".join(f'\tdname "{m["C"]}"\n' for m in MONS), '"CHIKORITA"')
+    "".join(f'\tdname "{m.get("name", m["C"])}"\n' for m in MONS), '"CHIKORITA"')
 insert_before("data/pokemon/cries.asm", "\tassert_table_length NUM_POKEMON_INDEXES",
-    "".join(f"\tmon_cry SFX_CRY_25, ${0x40+i*5:02X}, ${0x80-i*4:02X} ; {m['Camel']}\n"
+    "".join(f"\tmon_cry SFX_CRY_25, ${(0x40+i*5)&0xFF:02X}, ${(0x60+i*3)&0xFF|1:02X} ; {m['Camel']}\n"
             for i,m in enumerate(MONS)), "; Chikorita")
 insert_before("data/pokemon/dex_order.asm", "\tassert_table_length NUM_POKEMON_INDEXES",
     "".join(f"\tdb DEX_{m['C']}\n" for m in MONS), "DEX_CHIKORITA")
@@ -195,9 +251,24 @@ def append_evos_pointers():
     lines[last_dw+1:last_dw+1] = ins
     write(p, "\n".join(lines)); print("  patched evos pointer table")
 append_evos_pointers()
+def evo_lines(m):
+    """Emit Gen1 evolution bytes from either the new typed 'evos' list or the
+    legacy single 'evo' tuple. Gen1 byte formats:
+      LEVEL: db EVOLVE_LEVEL, <lvl>, <target>
+      ITEM:  db EVOLVE_ITEM, <item>, 1, <target>
+      TRADE: db EVOLVE_TRADE, 1, <target>"""
+    if "evos" in m:
+        out = []
+        for e in m["evos"]:
+            if e[0] == "LEVEL": out.append(f"\tdb EVOLVE_LEVEL, {e[1]}, {e[2]}\n")
+            elif e[0] == "ITEM": out.append(f"\tdb EVOLVE_ITEM, {e[1]}, 1, {e[2]}\n")
+            elif e[0] == "TRADE": out.append(f"\tdb EVOLVE_TRADE, 1, {e[1]}\n")
+        return "".join(out)
+    return f"\tdb EVOLVE_LEVEL, {m['evo'][0]}, {m['evo'][1]}\n" if m.get("evo") else ""
+
 evo_blocks = []
 for m in MONS:
-    ev = f"\tdb EVOLVE_LEVEL, {m['evo'][0]}, {m['evo'][1]}\n" if m["evo"] else ""
+    ev = evo_lines(m)
     learn = "".join(f"\tdb {lvl}, {mv}\n" for lvl,mv in m["learn"])
     evo_blocks.append(f"""{m['Camel']}EvosMoves:
 ; Evolutions
@@ -223,29 +294,126 @@ for m in MONS:
 append("data/pokemon/dex_entries.asm", "\n"+"\n".join(dex_blocks), "ChikoritaDexEntry:")
 text_blocks = []
 for m in MONS:
-    t = m["tx"]
-    text_blocks.append(f"""_{m['Camel']}DexEntry::
+    if "dexbody" in m:
+        body = "\n".join(m["dexbody"])
+        text_blocks.append(f"_{m['Camel']}DexEntry::\n{body}\n\tdex\n")
+    else:
+        t = m["tx"]
+        text_blocks.append(f"""_{m['Camel']}DexEntry::
 \ttext "{t[0]}"
 \tnext "{t[1]}"
 \tnext "{t[2]}"
 \tdex
 """)
-append("data/pokemon/dex_text.asm", "\n"+"\n".join(text_blocks), "_ChikoritaDexEntry::")
+# Full 2-page Gen2 dex text is far larger than vanilla's terse entries and
+# overflows the 16KB "Pokédex Text" bank. Entries are reached via banked
+# text_far pointers, so park the new ones in their own floating ROMX section.
+# (dex_text.asm is the last include in "Pokédex Text"; text.asm starts a new
+#  SECTION right after, so this directive captures only our appended entries.)
+append("data/pokemon/dex_text.asm",
+       '\nSECTION "Pokedex Text Gen2", ROMX\n\n' + "\n".join(text_blocks),
+       "_ChikoritaDexEntry::")
 
-# ---- 6. pics.asm new section + home/pics.asm bank routing ----
+# ---- 6. pics.asm sections + per-species pic-bank table + resolver ----
+# One floating ROMX section per mon (front+back share a bank, as the resolver
+# computes a single bank used for both). The linker auto-packs these across as
+# many banks as needed and rgbfix grows the ROM (MBC5). A floating bank table
+# (Gen2PicBanks, indexed by species-CHIKORITA) records each mon's pic bank via
+# BANK(), so the home resolver needs no per-bank range comparisons and this
+# scales to any count / non-contiguous indexes.
 print("pics:")
-pics = 'SECTION "Pics Gen2", ROMX\n\n' + "".join(
+pics = "\n".join(
+    f'SECTION "Pics {m["Camel"]}", ROMX\n'
     f'{m["Camel"]}PicFront:: INCBIN "gfx/pokemon/front/{m["f"]}.pic"\n'
     f'{m["Camel"]}PicBack::  INCBIN "gfx/pokemon/back/{m["f"]}b.pic"\n' for m in MONS)
-append("gfx/pics.asm", "\n"+pics, "Pics Gen2")
-# extend the pic-bank resolver: index >= CHIKORITA -> "Pics Gen2"
+# Bank table + a banked resolver (GetPicBankFar). The whole bank-selection
+# logic — vanilla "Pics 1-5"/fossil ranges AND the Gen2 table lookup — lives
+# here in ROMX (it can read Gen2PicBanks in-bank). The home resolver shrinks to
+# a single far call, which FREES ROM0 space (the vanilla range chain was ~35B)
+# rather than growing it. GetPicBankFar takes species in c, returns bank in e.
+banktable = (
+    'SECTION "Gen2 Pic Banks", ROMX\n'
+    'Gen2PicBanks::\n' +
+    "".join(f'\tdb BANK({m["Camel"]}PicFront) ; {m["C"]}\n' for m in MONS) +
+    '\nGetPicBankFar::\n'
+    '; in: c = species index ; out: e = pic ROM bank\n'
+    '\tld a, c\n'
+    '\tcp FOSSIL_KABUTOPS\n'
+    '\tjr nz, .nf\n'
+    '\tld e, BANK(FossilKabutopsPic)\n'
+    '\tret\n'
+    '.nf\n'
+    '\tcp TANGELA + 1\n'
+    '\tjr nc, .n1\n'
+    '\tld e, BANK("Pics 1")\n'
+    '\tret\n'
+    '.n1\n'
+    '\tcp MOLTRES + 1\n'
+    '\tjr nc, .n2\n'
+    '\tld e, BANK("Pics 2")\n'
+    '\tret\n'
+    '.n2\n'
+    '\tcp BEEDRILL + 2\n'
+    '\tjr nc, .n3\n'
+    '\tld e, BANK("Pics 3")\n'
+    '\tret\n'
+    '.n3\n'
+    '\tcp STARMIE + 1\n'
+    '\tjr nc, .n4\n'
+    '\tld e, BANK("Pics 4")\n'
+    '\tret\n'
+    '.n4\n'
+    '\tcp CHIKORITA\n'
+    '\tjr nc, .gen2\n'
+    '\tld e, BANK("Pics 5")\n'
+    '\tret\n'
+    '.gen2\n'
+    '\tsub CHIKORITA\n'
+    '\tld e, a\n'
+    '\tld d, 0\n'
+    '\tld hl, Gen2PicBanks\n'
+    '\tadd hl, de\n'
+    '\tld e, [hl]\n'
+    '\tret\n')
+append("gfx/pics.asm", "\n" + pics + "\n" + banktable, "Pics Chikorita")
+# Home resolver: replace the entire vanilla range chain with one far call.
 hp = os.path.join(PY, "home/pics.asm"); hs = read(hp)
-if "Pics Gen2" not in hs:
-    old = '\tld a, BANK("Pics 5")\n.GotBank'
-    new = ('\tld a, b\n\tcp CHIKORITA\n\tld a, BANK("Pics Gen2")\n\tjr nc, .GotBank\n'
-           '\tld a, BANK("Pics 5")\n.GotBank')
-    assert old in hs, "home/pics.asm bank pattern not found"
-    write(hp, hs.replace(old, new, 1)); print("  patched home/pics.asm bank routing")
+if "GetPicBankFar" not in hs:
+    old = (
+        '\tld a, [wCurPartySpecies]\n'
+        '\tld b, a\n'
+        '\tcp FOSSIL_KABUTOPS\n'
+        '\tld a, BANK(FossilKabutopsPic)\n'
+        '\tjr z, .GotBank\n'
+        '\tld a, b\n'
+        '\tcp TANGELA + 1\n'
+        '\tld a, BANK("Pics 1")\n'
+        '\tjr c, .GotBank\n'
+        '\tld a, b\n'
+        '\tcp MOLTRES + 1\n'
+        '\tld a, BANK("Pics 2")\n'
+        '\tjr c, .GotBank\n'
+        '\tld a, b\n'
+        '\tcp BEEDRILL + 2\n'
+        '\tld a, BANK("Pics 3")\n'
+        '\tjr c, .GotBank\n'
+        '\tld a, b\n'
+        '\tcp STARMIE + 1\n'
+        '\tld a, BANK("Pics 4")\n'
+        '\tjr c, .GotBank\n'
+        '\tld a, BANK("Pics 5")\n'
+        '.GotBank\n'
+        '\tjp UncompressSpriteData')
+    new = (
+        '\tld a, [wCurPartySpecies]\n'
+        '\tld c, a\n'
+        '\tld hl, GetPicBankFar\n'
+        '\tld b, BANK(GetPicBankFar)\n'
+        '\tcall Bankswitch ; runs GetPicBankFar far, returns bank in e\n'
+        '\tld a, e\n'
+        '\tjp UncompressSpriteData')
+    assert old in hs, "home/pics.asm resolver pattern not found"
+    write(hp, hs.replace(old, new, 1)); print("  patched home/pics.asm -> far bank resolver")
 else:
     print("  skip home/pics.asm")
 
@@ -261,16 +429,17 @@ def to_gray4(img, size=None):
         g = g.resize(size, Image.LANCZOS)
     return g.point([min(3, v * 4 // 256) * 85 for v in range(256)])
 for m in MONS:
-    fr = Image.open(os.path.join(PC, f"gfx/pokemon/{m['f']}/front.png"))
+    src = m.get("sprdir", m["f"])  # source form dir (e.g. unown -> unown_a)
+    fr = Image.open(os.path.join(PC, f"gfx/pokemon/{src}/front.png"))
     W = fr.width
     to_gray4(fr.crop((0, 0, W, W))).save(os.path.join(PY, f"gfx/pokemon/front/{m['f']}.png"))
     # Back: keep Gen 2's NATIVE 48x48 (6x6 tiles) — no downscale. LoadMonBackPic
     # detects the 6x6 dimension and renders it without the vanilla 2x upscale, so
     # there's no downscale+re-upscale blur (see engine/battle/init_battle.asm).
     # Force exactly 48x48 by centering on a white canvas (no scaling).
-    bk = Image.open(os.path.join(PC, f"gfx/pokemon/{m['f']}/back.png")).convert("RGBA").convert("L")
+    bk = Image.open(os.path.join(PC, f"gfx/pokemon/{src}/back.png")).convert("RGBA").convert("L")
     canvas = Image.new("L", (48, 48), 255)
     canvas.paste(bk, ((48 - bk.width) // 2, (48 - bk.height) // 2))
     to_gray4(canvas).save(os.path.join(PY, f"gfx/pokemon/back/{m['f']}b.png"))
-print("  wrote 9 front + 9 back PNGs")
+print(f"  wrote {len(MONS)} front + {len(MONS)} back PNGs")
 print("DONE.")

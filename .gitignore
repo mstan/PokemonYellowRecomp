@@ -53,3 +53,4 @@ rekey_frame.png
 dist/*
 !dist/*.bps
 dist/release/
+__pycache__/
