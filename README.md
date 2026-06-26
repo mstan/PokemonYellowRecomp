@@ -4,25 +4,31 @@ An extended **Pokémon Yellow** built from the [pret/pokeyellow](https://github.
 decompilation, then run **natively** through our `gbrecomp` static recompiler
 and SDL/ANGLE runner.
 
-The headline change: **9 new Pokémon — the three Johto starter lines**
-(Chikorita→Bayleef→Meganium, Cyndaquil→Quilava→Typhlosion,
-Totodile→Croconaw→Feraligatr), back-ported from [pret/pokecrystal](https://github.com/pret/pokecrystal)
-as **Pokédex #152–160**, bringing Yellow to **160 Pokémon**.
+The headline change: **the full Johto Pokédex — 100 new Pokémon (#152–251)**,
+back-ported from [pret/pokecrystal](https://github.com/pret/pokecrystal),
+bringing Yellow to the complete **National Dex #1–251**. (Started as the 9 Johto
+starters; see [ENHANCEMENTS.md](ENHANCEMENTS.md) for status + roadmap.)
 
 Everything is done by editing the **decomp source** (assembly + data + PNG
-sprites) and reassembling a real ROM — *not* by binary-patching a `.gbc`.
+sprites) and reassembling a real ROM — *not* by binary-patching a `.gbc`. The
+Gen-2 content is pulled from pokecrystal's source at build time (no Crystal ROM
+needed), so the repo ships **source only — no ROM, binary, or patch**.
 
 ## Layout
 
 ```
 PokemonYellowDecomp/
-  pokeyellow/        pret decomp (base) — edited to add the 9 mon
-  pokecrystal/       pret decomp (Gen 2 donor — stats, sprites, learnsets)
-  roms/              your stock base ROMs (verified; not distributed)
+  pokeyellow/        pret decomp (base) — injected to add dex 152–251
+  pokecrystal/       pret decomp (Gen 2 donor — stats, sprites, learnsets, text)
+  roms/              optional: your own stock ROM for byte-verification (not distributed)
   tools/rgbds/       RGBDS 1.0.1 (the GB assembler)
+  gen2_data.py       pokecrystal → Gen1 data translator (any dex range)
   inject_gen2.py     idempotent injector: data + ASM edits + sprite conversion
-  pokeyellow_recomp.toml   gbrecomp config to recompile the modified ROM
-  recomp/            generated native project (Pokemon_Yellow.exe)
+  gen2_moves.py      Gen2-move foundation parser (next phase)
+  fill_dex_save.py   validation-save builder (party + PC + full Pokédex)
+  pokeyellow_recomp.toml         gbrecomp config — EXTENDED build
+  pokeyellow_stock_recomp.toml   gbrecomp config — STOCK build (bifurcation)
+  recomp/            generated native project (Pokemon_Yellow_Extended.exe)
 ```
 
 ## Quick start
@@ -34,11 +40,13 @@ mingw32-make pokeyellow.gbc RGBDS=../tools/rgbds/ -j4   # → pokeyellow.gbc
 
 # 2. Recompile it to native + run on our runner
 gbrecomp --config ../pokeyellow_recomp.toml
-#   build recomp/ with cmake+ninja, then run recomp/build/Pokemon_Yellow.exe
+#   build recomp/ with cmake+ninja, then run recomp/build/Pokemon_Yellow_Extended.exe
 ```
 
-The modified ROM is a legit GB ROM (sha1 `8efa12df…`, vs stock `cc7d0326…`); it
-also runs in any GBC emulator.
+The extended ROM is a legit GB ROM (vs stock Yellow sha1 `cc7d0326…`); it also
+runs in any GBC emulator. (Inject onto a clean tree first — `inject_gen2.py`'s
+idempotency guards key off the first injected mon, so adding mon needs a reset
+`pokeyellow/`.)
 
 ## Documentation
 
@@ -64,46 +72,48 @@ Known issues + proposed fixes are tracked in **[ISSUES.md](ISSUES.md)** (e.g.
 #1: blurry back sprites on back-ported Gen 2 mon → the native-48×48 back-sprite
 engine fix).
 
-## Distribution
+## Distribution — source only, no BPS
 
-Ship the pre-recompiled binary + a **BPS patch** + (optionally) a starter save.
-The user provides their own **stock** Yellow ROM — no ROM is ever distributed.
+**Nothing copyrighted is distributed, and there is no BPS patch.** The repo ships
+only the scripts + the pinned pret commits ([BUILD_DEPS.md](BUILD_DEPS.md)). The
+build clones pret `pokeyellow` + `pokecrystal` and produces the ROM **locally**,
+so we never redistribute Nintendo's content.
 
-**Auto-patch on launch (implemented).** When the launcher is given a stock ROM
-whose SHA-256 doesn't match the build, it looks for `<prefix>.bps` next to the
-executable, applies it, and — if the result matches the expected ROM — writes
-`<romname>.extended.gbc` next to the exe and runs that (caching the path so it's
-a one-time step). The user just supplies a stock ROM; the enhanced ROM is
-produced automatically. See `bps_patch.c` / `launcher.c` in the runtime and
-`make_bps.py` (patch generator) here.
+A BPS was deliberately rejected: a patch is only "clean" when its diff is your
+own work, but ours encodes the **Crystal-derived sprites / data / dex text** we
+add — i.e. copyrighted content. So we drop the BPS entirely. `inject_gen2.py` is
+effectively an **on-the-fly extractor** — it pulls the Gen-2 content from
+pokecrystal's *source* and grafts it into Yellow at build time. No Crystal ROM is
+needed; pret's open decomp is the donor.
 
-Release folder (next to the .exe):
+To get a runnable game, a user clones this repo, fetches the pinned prets, and
+runs the build (Quick start above). The recompiled `.exe` is ROM-derivative, so
+it too is built locally and never shipped.
 
-Filenames are **annotated** so it's always clear what a file is (the build's
-`output_prefix` drives the exe, save, and patch-lookup names). A future stock
-build would use prefix `Pokemon_Yellow_Stock` so its `.sav` never collides.
+### Stock vs. extended (bifurcation)
 
-| File | Purpose |
-|---|---|
-| `Pokemon_Yellow_Extended.exe` | the recompiled extended game |
-| `Pokemon_Yellow_Extended.bps` | stock→extended patch (`dist/Pokemon_Yellow_Extended.bps`) |
-| `*.dll` (23) | SDL2, ANGLE (libEGL/libGLESv2), curl, and their deps |
+Two distinct, non-colliding targets are built from the same pret base:
 
-First launch: pick your stock Yellow ROM → `<yourrom>.extended.gbc` is generated
-and booted (cached for next time). Then NEW GAME as usual.
+| Target | ROM source | Recompile config | Output |
+|---|---|---|---|
+| **Stock** | pret pokeyellow, **un-injected** | `pokeyellow_stock_recomp.toml` | `recomp_stock/…/Pokemon_Yellow_Stock.exe` |
+| **Extended** | pret pokeyellow + `inject_gen2.py` | `pokeyellow_recomp.toml` | `recomp/…/Pokemon_Yellow_Extended.exe` |
 
-> No save is bundled. A clean "new game + 3 starters at Lv5" save can be
-> generated with `synth_starter_save.py` if desired; it would be extended-only
-> (stock Yellow rejects it safely — the larger Pokédex flag arrays change the
-> save layout/checksum).
+The injector only ever runs on a freshly-reset tree, so **stock is always
+recoverable** (`git -C pokeyellow checkout . && git -C pokeyellow clean -fd`).
+Distinct `output_prefix`es keep the two exes/saves separate, and the runner's
+`--differential` oracle can A/B them.
 
-> When publishing, this is released as **PokemonYellowRecomp** (the deliverable
-> is the recomp + BPS; the decomp is the build-time tool that produces the
-> patch). `.gitignore` here already excludes ROMs/saves/build output.
+> A clean "new game + 3 starters" save can be generated with
+> `synth_starter_save.py`, and the validation save (party + full PC + complete
+> Pokédex) with `fill_dex_save.py`. Both are **extended-only** — stock Yellow
+> rejects them safely, since the larger Pokédex flag arrays change the save
+> layout/checksum. Saves are never committed.
 
 ## Credits / legal
 
 Built on **pret**'s `pokeyellow` and `pokecrystal` disassemblies. Pokémon is ©
-Nintendo / Creatures / GAME FREAK. No ROM is included or distributed — supply
-your own legally-obtained copy. The BPS patch contains only original additions
-(a binary diff), not any portion of the copyrighted ROM.
+Nintendo / Creatures / GAME FREAK. No ROM, binary, or patch is distributed: this
+repo is **source only** (scripts + pret pins), and the ROM is built locally from
+the open decompilations. Supply your own legally-obtained game if you want to
+verify byte-for-byte against the stock base.

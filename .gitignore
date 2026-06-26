@@ -48,9 +48,8 @@ tools/*.zip
 rekey_frame.png
 *_frame.png
 
-# dist: track ONLY the BPS patch (no binaries/zips/saves in the repo)
-!dist/
-dist/*
-!dist/*.bps
-dist/release/
+# No distributable artifacts in the repo. A BPS diff still encodes the
+# Crystal-derived (copyrighted) content we add, so it is NOT shipped either —
+# the ROM is built locally from pret. Track scripts/docs only.
+dist/
 __pycache__/

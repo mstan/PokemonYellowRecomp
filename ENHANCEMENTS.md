@@ -164,6 +164,10 @@ Run: point `recomp/build/rom.cfg` at `pokeyellow/pokeyellow.gbc`, swap
 launch `recomp/build/Pokemon_Yellow_Extended.exe`. Runner flags: `--input <file>`
 (scripted buttons `U/D/L/R/A/B/S/T`), `--dump-frames a,b,c`, `--limit-frames N`.
 
-**Rules:** edit pret SOURCE, never binary-patch a ROM. Never commit
-ROMs/binaries/saves (repo + releases stay private). Never overwrite the user's
-`recomp/build/*.sav`. Build long jobs at low priority.
+**Rules:** edit pret SOURCE, never binary-patch a ROM. **Source-only
+distribution — no ROM, binary, or BPS** (a BPS diff still encodes the
+Crystal-derived copyrighted content we add; the ROM is built locally from pret).
+Never commit ROMs/binaries/saves. Never overwrite the user's `recomp/build/*.sav`.
+Build long jobs at low priority. Stock vs. extended are bifurcated targets
+(`pokeyellow_stock_recomp.toml` / `pokeyellow_recomp.toml`) — stock is always
+recoverable by resetting `pokeyellow/`.

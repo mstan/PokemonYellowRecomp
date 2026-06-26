@@ -1,13 +1,14 @@
-# Recompile the MODIFIED (160-Pokémon) Pokémon Yellow decomp ROM with gbrecomp,
-# closing the loop: pret decomp -> hack -> ROM -> static recompile -> native runner.
+# Recompile the EXTENDED (full Johto dex, 251-Pokemon) Pokemon Yellow ROM with
+# gbrecomp: pret decomp -> inject Gen2 content -> ROM -> static recompile ->
+# native runner. The ROM is built locally from pret (see README); nothing
+# copyrighted is distributed, so there is no BPS / shipped binary.
 [rom]
-path = "pokeyellow/pokeyellow.gbc"        # our injected 160-mon ROM (sha 8efa12df)
+path = "pokeyellow/pokeyellow.gbc"        # the injected ROM (build it first)
 output_dir = "recomp"
 runtime_dir = "../../gb-recompiled/runtime"  # relative to the generated dir (recomp/)
-# Prefix is annotated so every derived filename says WHAT it is: the exe
-# (Pokemon_Yellow_Extended.exe), the save (save_id -> Pokemon_Yellow_Extended.sav),
-# and the auto-patch lookup (Pokemon_Yellow_Extended.bps). A future stock build
-# would use output_prefix = "Pokemon_Yellow_Stock" so saves never collide.
+# The prefix tags every derived filename (Pokemon_Yellow_Extended.exe and its
+# save Pokemon_Yellow_Extended.sav) so the EXTENDED build never collides with the
+# STOCK build (pokeyellow_stock_recomp.toml -> Pokemon_Yellow_Stock.*).
 output_prefix = "Pokemon_Yellow_Extended"
 
 [options]

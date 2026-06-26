@@ -1,0 +1,19 @@
+# Recompile STOCK (unmodified) Pokemon Yellow with gbrecomp -- the bifurcation
+# partner to pokeyellow_recomp.toml (EXTENDED). Build this from a CLEAN pret tree
+# with NO injection:
+#   git -C pokeyellow checkout . && git -C pokeyellow clean -fd
+#   (cd pokeyellow && mingw32-make pokeyellow.gbc RGBDS=...)      # stock ROM
+#   gbrecomp --config pokeyellow_stock_recomp.toml
+# The distinct output_prefix keeps the stock exe/save namespace separate from the
+# extended one, so both can coexist (and the runner's --differential oracle can
+# A/B them). Like EXTENDED, the ROM is built locally from pret; nothing
+# copyrighted is shipped.
+[rom]
+path = "pokeyellow/pokeyellow.gbc"        # build STOCK (un-injected) first
+output_dir = "recomp_stock"
+runtime_dir = "../../gb-recompiled/runtime"
+output_prefix = "Pokemon_Yellow_Stock"
+
+[options]
+aggressive_scan = true
+emit_comments = true
