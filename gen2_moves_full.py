@@ -38,6 +38,52 @@ import gen2_moves_simple as simple
 #     asm       : the handler routine, assembled into the Battle Core bank
 # ---------------------------------------------------------------------------
 NATIVE_EFFECTS = {
+    # --- on-hit self stat boosts: damaging moves, effect runs AFTER damage
+    #     (category None => not in any effect-category array). A SINGLE call to
+    #     the engine's StatModifierUpEffect is safe; multiple calls would
+    #     re-apply burn/paralysis penalties each time, so multi-stat moves
+    #     (AncientPower-all, Curse) are intentionally left as fallback.
+    "EFFECT_ATTACK_UP_HIT": dict(
+        const="EFFECT_GEN2_ATTACK_UP_HIT", ptr="Gen2AttackUpHitEffect", category=None,
+        asm="""Gen2AttackUpHitEffect:
+; Metal Claw: after the hit lands, raise the user's Attack one stage by
+; reusing StatModifierUpEffect with a temporarily-swapped move effect.
+	ldh a, [hWhoseTurn]
+	and a
+	ld hl, wPlayerMoveEffect
+	jr z, .got
+	ld hl, wEnemyMoveEffect
+.got
+	ld a, [hl]
+	push af
+	push hl
+	ld [hl], ATTACK_UP1_EFFECT
+	call StatModifierUpEffect
+	pop hl
+	pop af
+	ld [hl], a
+	ret
+"""),
+    "EFFECT_DEFENSE_UP_HIT": dict(
+        const="EFFECT_GEN2_DEFENSE_UP_HIT", ptr="Gen2DefenseUpHitEffect", category=None,
+        asm="""Gen2DefenseUpHitEffect:
+; Steel Wing: after the hit lands, raise the user's Defense one stage.
+	ldh a, [hWhoseTurn]
+	and a
+	ld hl, wPlayerMoveEffect
+	jr z, .got
+	ld hl, wEnemyMoveEffect
+.got
+	ld a, [hl]
+	push af
+	push hl
+	ld [hl], DEFENSE_UP1_EFFECT
+	call StatModifierUpEffect
+	pop hl
+	pop af
+	ld [hl], a
+	ret
+"""),
     "EFFECT_HEAL_BELL": dict(
         const="EFFECT_GEN2_HEAL_BELL", ptr="Gen2HealBellEffect", category="residual1",
         asm="""Gen2HealBellEffect:

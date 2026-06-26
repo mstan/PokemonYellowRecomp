@@ -10,18 +10,20 @@ Auto-generated from `gen2_moves.py` + `gen2_moves_simple.py` + `gen2_moves_full.
 
   | tier | count | meaning |
   |---|---|---|
-  | **native** | 3 | real new engine code (full-fidelity Gen2 behaviour) |
+  | **native** | 5 | real new engine code (full-fidelity Gen2 behaviour) |
   | **gen1-exact** | 21 | reuses a Gen1 effect that already matches — full-fidelity, no new code |
-  | **fallback** | 37 | best-effort: plain damage, an approximation, or a no-op Splash |
+  | **fallback** | 35 | best-effort: plain damage, an approximation, or a no-op Splash |
 
 > In `full`, **native + gen1-exact = fully working** (23 moves). **fallback** moves are the remaining port work — they're playable but lossy (see the Result column).
 
-## ✅ Native (real new engine handlers) — 3
+## ✅ Native (real new engine handlers) — 5
 
 | Move | Type | Pow | Gen2 effect | `full` result | `simple` result |
 |---|---|---:|---|---|---|
 | PSYCH UP | NORMAL | 0 | `EFFECT_PSYCH_UP` | copy target's stat stages onto user (native) | no-op (animation only, “nothing happened”) |
 | PAIN SPLIT | NORMAL | 0 | `EFFECT_PAIN_SPLIT` | EFFECT_GEN2_PAIN_SPLIT | halve target HP |
+| METAL CLAW | STEEL | 50 | `EFFECT_ATTACK_UP_HIT` | EFFECT_GEN2_ATTACK_UP_HIT | plain damage |
+| STEEL WING | STEEL | 70 | `EFFECT_DEFENSE_UP_HIT` | EFFECT_GEN2_DEFENSE_UP_HIT | plain damage |
 | HEAL BELL | NORMAL | 0 | `EFFECT_HEAL_BELL` | cure entire party's status (native) | no-op (animation only, “nothing happened”) |
 
 ## ✅ Gen1-exact (full-fidelity via an existing Gen1 effect) — 21
@@ -50,7 +52,7 @@ Auto-generated from `gen2_moves.py` + `gen2_moves_simple.py` + `gen2_moves_full.
 | AEROBLAST | FLYING | 100 | `EFFECT_NORMAL_HIT` | plain damage | plain damage |
 | SACRED FIRE | FIRE | 100 | `EFFECT_SACRED_FIRE` | damage + burn chance | damage + burn chance |
 
-## 🟡 Fallback (best-effort — remaining port work) — 37
+## 🟡 Fallback (best-effort — remaining port work) — 35
 
 | Move | Type | Pow | Gen2 effect | `full` result | `simple` result |
 |---|---|---:|---|---|---|
@@ -79,7 +81,6 @@ Auto-generated from `gen2_moves.py` + `gen2_moves_simple.py` + `gen2_moves_full.
 | SPIKES | GROUND | 0 | `EFFECT_SPIKES` | no-op (animation only, “nothing happened”) | no-op (animation only, “nothing happened”) |
 | SANDSTORM | ROCK | 0 | `EFFECT_SANDSTORM` | no-op (animation only, “nothing happened”) | no-op (animation only, “nothing happened”) |
 | FALSE SWIPE | NORMAL | 40 | `EFFECT_FALSE_SWIPE` | plain damage | plain damage |
-| METAL CLAW | STEEL | 50 | `EFFECT_ATTACK_UP_HIT` | plain damage | plain damage |
 | ENDURE | NORMAL | 0 | `EFFECT_ENDURE` | no-op (animation only, “nothing happened”) | no-op (animation only, “nothing happened”) |
 | REVERSAL | FIGHTING | 80 | `EFFECT_REVERSAL` | plain damage | plain damage |
 | BEAT UP | DARK | 30 | `EFFECT_BEAT_UP` | plain damage | plain damage |
@@ -87,7 +88,6 @@ Auto-generated from `gen2_moves.py` + `gen2_moves_simple.py` + `gen2_moves_full.
 | LOCK-ON | NORMAL | 0 | `EFFECT_LOCK_ON` | no-op (animation only, “nothing happened”) | no-op (animation only, “nothing happened”) |
 | OCTAZOOKA | WATER | 65 | `EFFECT_ACCURACY_DOWN_HIT` | plain damage | plain damage |
 | PRESENT | NORMAL | 40 | `EFFECT_PRESENT` | plain damage | plain damage |
-| STEEL WING | STEEL | 70 | `EFFECT_DEFENSE_UP_HIT` | plain damage | plain damage |
 | CONVERSION2 | NORMAL | 0 | `EFFECT_CONVERSION2` | copy a type | copy a type |
 | SKETCH | NORMAL | 0 | `EFFECT_SKETCH` | copy a move | copy a move |
 | TRIPLE KICK | FIGHTING | 20 | `EFFECT_TRIPLE_KICK` | multi-hit damage | multi-hit damage |

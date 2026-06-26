@@ -34,13 +34,21 @@ LEVEL = 50
 # Showcase party: (species const, [<=4 move consts], nickname). 24 distinct new
 # moves spanning every tier -- the 2 NATIVE handlers (Heal Bell, Psych Up), real
 # Dark/Steel STAB, heals, burn, and a wide sample of best-effort fallbacks.
+# 24 moves chosen to all DO something (native / gen1-exact / functional
+# approximation) — no dead Splash no-ops. Comments tag how each resolves.
 PARTY_DEF = [
-    ("TYRANITAR",  ["CRUNCH", "PURSUIT", "SANDSTORM", "ANCIENTPOWER"], "TYRANITAR"),   # Rock/Dark
-    ("SKARMORY",   ["STEEL_WING", "METAL_CLAW", "SPIKES", "FALSE_SWIPE"], "SKARMORY"),  # Steel/Flying
-    ("BLISSEY",    ["HEAL_BELL", "MILK_DRINK", "PRESENT", "SAFEGUARD"], "BLISSEY"),      # native Heal Bell
-    ("GIRAFARIG",  ["PSYCH_UP", "FUTURE_SIGHT", "CRUNCH", "MIRROR_COAT"], "GIRAFARIG"),  # native Psych Up
-    ("HO_OH",      ["SACRED_FIRE", "SUNNY_DAY", "MORNING_SUN", "AEROBLAST"], "HO-OH"),   # Fire/Flying
-    ("MISDREAVUS", ["CURSE", "PERISH_SONG", "DESTINY_BOND", "PAIN_SPLIT"], "MISDREAVUS"),# Ghost
+    # Rock/Dark: Crunch(SpDef↓), Pursuit(dmg), Metal Claw(native Atk↑), AncientPower(dmg)
+    ("TYRANITAR",  ["CRUNCH", "PURSUIT", "METAL_CLAW", "ANCIENTPOWER"], "TYRANITAR"),
+    # Steel/Flying: Steel Wing(native Def↑), Faint Attack(always-hit), Megahorn(dmg), False Swipe(dmg)
+    ("SKARMORY",   ["STEEL_WING", "FAINT_ATTACK", "MEGAHORN", "FALSE_SWIPE"], "SKARMORY"),
+    # Heal Bell(native), Milk Drink(heal), Charm(Atk↓2), Sweet Kiss(confuse)
+    ("BLISSEY",    ["HEAL_BELL", "MILK_DRINK", "CHARM", "SWEET_KISS"], "BLISSEY"),
+    # Psych Up(native), Future Sight(dmg), Mirror Coat(≈Bide), Conversion2(≈Conversion)
+    ("GIRAFARIG",  ["PSYCH_UP", "FUTURE_SIGHT", "MIRROR_COAT", "CONVERSION2"], "GIRAFARIG"),
+    # Sacred Fire(burn), Morning Sun(heal), Spark(para), Powder Snow(freeze)
+    ("HO_OH",      ["SACRED_FIRE", "MORNING_SUN", "SPARK", "POWDER_SNOW"], "HO-OH"),
+    # Pain Split(native), Giga Drain(drain), Snore(flinch), Spite(≈Disable)
+    ("MISDREAVUS", ["PAIN_SPLIT", "GIGA_DRAIN", "SNORE", "SPITE"], "MISDREAVUS"),
 ]
 
 
