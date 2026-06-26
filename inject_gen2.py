@@ -90,6 +90,45 @@ import gen2_data
 _LO = int(os.environ.get("GEN2_DEX_LO", "161"))
 _HI = int(os.environ.get("GEN2_DEX_HI", "251"))
 _STARTERS = [m["C"] for m in MONS]
+
+# ---- Gen2 movesets/types: MOVE_MODE = off | simple | full -------------------
+# off    : current behaviour (Gen1-only movesets, Dark/Steel remapped away).
+# simple : add the 61 Gen2-only moves with real type/power/PP, EFFECTS mapped to
+#          the nearest Gen1 effect (no engine changes).  + real Dark/Steel.
+# full   : same moves/types, but native handlers are compiled into the battle
+#          engine for the effects that can't be expressed in Gen1 (tiered;
+#          see gen2_moves_full.py).  Build both, pick at run time.
+# Switching modes requires a clean pokeyellow checkout (edits aren't reversible
+# in place); within a mode the script stays idempotent.
+import gen2_moves
+MOVE_MODE = os.environ.get("MOVE_MODE", "off").lower()
+assert MOVE_MODE in ("off", "simple", "full"), f"bad MOVE_MODE: {MOVE_MODE!r}"
+NEW_MOVES, _MV = [], None
+if MOVE_MODE != "off":
+    import gen2_moves_simple, gen2_moves_full
+    _MV = gen2_moves_full if MOVE_MODE == "full" else gen2_moves_simple
+    gen2_data.TYPE_REMAP = {}  # keep mon's true Dark/Steel typing (types added below)
+    gen2_data.TYPE_PAL.setdefault("DARK", "PAL_PURPLEMON")
+    gen2_data.TYPE_PAL.setdefault("STEEL", "PAL_GRAYMON")
+    gen2_data.TYPE_ICON.setdefault("DARK", "ICON_MON")
+    gen2_data.TYPE_ICON.setdefault("STEEL", "ICON_MON")
+    # Build the new-move table from the dex actually being injected (starters +
+    # the generated range). Must precede build_mons so its learnset filter
+    # accepts these moves (gen2_data._valid_moves reads move_constants.asm).
+    _dex_for_moves = sorted(set(range(152, 161)) | set(range(_LO, _HI + 1)))
+    NEW_MOVES = gen2_moves.build_move_table(_dex_for_moves)
+    # Inject move CONSTANTS now (before build_mons). STRUGGLE must stay last
+    # (engine asserts NUM_ATTACKS == STRUGGLE), so insert immediately before it.
+    _mc = os.path.join(PY, "constants/move_constants.asm")
+    _s = open(_mc, encoding="utf-8").read()
+    if NEW_MOVES and NEW_MOVES[0]["C"] not in _s.split("DEF NUM_ATTACKS")[0]:
+        _i = _s.rfind("\tconst STRUGGLE")
+        _s = _s[:_i] + "".join(f"\tconst {m['C']}\n" for m in NEW_MOVES) + _s[_i:]
+        open(_mc, "w", encoding="utf-8", newline="\n").write(_s)
+        print(f"move constants: +{len(NEW_MOVES)} before STRUGGLE (MOVE_MODE={MOVE_MODE})")
+    else:
+        print(f"move constants: already present (MOVE_MODE={MOVE_MODE})")
+
 MONS += gen2_data.build_mons(list(range(_LO, _HI + 1)), extra_species=_STARTERS)
 
 def _gap_indexes():
@@ -130,6 +169,20 @@ def insert_before(relpath, marker, block, guard):
     if idx < 0:
         print(f"  !! marker not found in {relpath}: {marker!r}"); sys.exit(1)
     s = s[:idx] + block + s[idx:]
+    write(p, s); print(f"  patched: {relpath}")
+
+def insert_before_regex(relpath, pattern, block, guard):
+    """Like insert_before, but locates the FIRST line matching a regex (so the
+    anchor can be a specific row whose exact spacing is awkward to hard-code,
+    e.g. the STRUGGLE row in the move tables)."""
+    p = os.path.join(PY, relpath)
+    s = read(p)
+    if guard in s:
+        print(f"  skip (already injected): {relpath}"); return
+    m = _re.search(pattern, s, _re.M)
+    if not m:
+        print(f"  !! pattern not found in {relpath}: {pattern!r}"); sys.exit(1)
+    s = s[:m.start()] + block + s[m.start():]
     write(p, s); print(f"  patched: {relpath}")
 
 def append(relpath, block, guard):
@@ -218,6 +271,56 @@ def relocate_growing_tables():
             '\nSECTION "Base Stats", ROMX\n\nINCLUDE "data/pokemon/base_stats.asm"\n'
             + anchor, 1)
         write(mp, ms); print("  relocated base_stats -> own bank")
+
+def relocate_anim_overflow():
+    """Adding 61 per-move pointers to AttackAnimationPointers overflows bank1E
+    (already near-full from the full dex). Move three far-accessed chunks out to
+    a floating ROMX bank to make room: cut2 (entered via `predef UsedCut`),
+    dust_smoke (`callfar AnimateBoulderDust`), and the fishing gfx (loaded with
+    a BANK() byte from its table) -- all bank-transparent, so relocation is safe.
+    Moved as one contiguous block to preserve their original ordering. Idempotent."""
+    mp = os.path.join(PY, "main.asm"); ms = read(mp)
+    if 'SECTION "Gen2 Anim Overflow"' in ms:
+        print("  skip (anim overflow already relocated)"); return
+    moved = ['INCLUDE "engine/overworld/cut2.asm"\n',
+             'INCLUDE "engine/overworld/dust_smoke.asm"\n',
+             'INCLUDE "gfx/fishing.asm"\n']
+    for inc in moved:
+        if inc not in ms:
+            print(f"  !! anim-overflow include not found: {inc!r}"); sys.exit(1)
+        ms = ms.replace(inc, "", 1)
+    sec = '\nSECTION "Gen2 Anim Overflow", ROMX\n\n' + "".join(moved)
+    ms = ms.replace('\nSECTION "Surfing Minigame", ROMX',
+                    sec + '\nSECTION "Surfing Minigame", ROMX', 1)
+    write(mp, ms)
+    print("  relocated cut2/dust_smoke/fishing -> floating bank (anim overflow)")
+
+def trim_anim_slots():
+    """Drop gen2_moves.ANIM_TRIM pseudo-animation slots so NUM_ATTACK_ANIMS
+    (= NUM_ATTACKS + #pseudo-anims) stays <= 255 once the 61 new moves push
+    NUM_ATTACKS to 226. Removes each slot's const (move_constants.asm) AND its
+    1:1 pointer in the pseudo-anim region of AttackAnimationPointers
+    (animations.asm). Idempotent (keys off the first trim const still present)."""
+    trim = gen2_moves.ANIM_TRIM
+    mc = os.path.join(PY, "constants/move_constants.asm"); ms = read(mc)
+    if f"\tconst {trim[0]}\n" not in ms:
+        print("  skip (anim slots already trimmed)"); return
+    after = ms.split("DEF NUM_ATTACKS", 1)[1].split("DEF NUM_ATTACK_ANIMS", 1)[0]
+    pseudo = _re.findall(r"^\tconst (\w+)", after, _re.M)  # 37 pseudo-anim consts, in order
+    drop_ord = sorted(pseudo.index(c) for c in trim)
+    for c in trim:
+        ms = ms.replace(f"\tconst {c}\n", "", 1)
+    write(mc, ms)
+    ap = os.path.join(PY, "data/moves/animations.asm"); s = read(ap)
+    head, rest = s.split("\tassert_table_length NUM_ATTACKS\n", 1)
+    region, tail = rest.split("\tassert_table_length NUM_ATTACK_ANIMS", 1)
+    dw = region.splitlines(keepends=True)              # the 37 pseudo-anim `dw` lines
+    dws = [i for i, l in enumerate(dw) if l.lstrip().startswith("dw ")]
+    for o in sorted(drop_ord, reverse=True):
+        del dw[dws[o]]
+    write(ap, head + "\tassert_table_length NUM_ATTACKS\n" + "".join(dw)
+          + "\tassert_table_length NUM_ATTACK_ANIMS" + tail)
+    print(f"  trimmed {len(trim)} anim slots: {', '.join(trim)}")
 
 # ---- 0. engine patches (non-table edits) ----
 print("engine patches:")
@@ -526,4 +629,55 @@ for m in MONS:
     canvas.paste(bk, ((48 - bk.width) // 2, (48 - bk.height) // 2))
     to_gray4(canvas).save(os.path.join(PY, f"gfx/pokemon/back/{m['f']}b.png"))
 print(f"  wrote {len(MONS)} front + {len(MONS)} back PNGs")
+
+# ---- 8. Gen2 moves + Dark/Steel types (MOVE_MODE simple/full) ----
+if MOVE_MODE != "off" and NEW_MOVES:
+    print(f"moves+types ({MOVE_MODE}):")
+    relocate_anim_overflow()  # free bank1E room for the +61 animation pointers
+    # types: STEEL ($09, physical block) and DARK ($1b, after the special block)
+    insert_before("constants/type_constants.asm", "DEF UNUSED_TYPES EQU const_value",
+        "\tconst STEEL\n", "\tconst STEEL\n")
+    insert_before("constants/type_constants.asm", "DEF NUM_TYPES EQU const_value",
+        "\tconst DARK\n", "\tconst DARK\n")
+    insert_before("data/types/names.asm", "REPT UNUSED_TYPES_END",
+        "\tdw .Steel\n", "\tdw .Steel\n")
+    insert_before("data/types/names.asm", "\tassert_table_length NUM_TYPES",
+        "\tdw .Dark\n", "\tdw .Dark\n")
+    insert_before("data/types/names.asm", '.Normal:   db "NORMAL@"',
+        '.Steel:    db "STEEL@"\n.Dark:     db "DARK@"\n', '.Steel:')
+    matchups = "\t; --- Gen2 Dark/Steel type matchups ---\n" + "".join(
+        f"\tdb {a+',':<13} {d+',':<13} {mlt}\n" for a, d, mlt in gen2_moves.TYPE_MATCHUPS)
+    insert_before("data/types/type_matchups.asm", "\tdb -1 ; end", matchups,
+        "Gen2 Dark/Steel type matchups")
+
+    # move tables: 61 rows go BEFORE the STRUGGLE row in each parallel table so
+    # STRUGGLE stays the last move (NUM_ATTACKS == STRUGGLE).
+    resolve = _MV.resolve
+    insert_before_regex("data/moves/moves.asm", r"^\tmove STRUGGLE,",
+        gen2_moves.moves_rows(NEW_MOVES, resolve), f"\tmove {NEW_MOVES[0]['C']},")
+    insert_before_regex("data/moves/names.asm", r'^\tli "STRUGGLE"',
+        gen2_moves.names_rows(NEW_MOVES), f'\tli "{NEW_MOVES[0]["name"]}"')
+    insert_before_regex("data/moves/animations.asm", r"^\tdw StruggleAnim$",
+        "\t; Gen2 moves (generic anim)\n" + gen2_moves.anim_rows(NEW_MOVES),
+        "Gen2 moves (generic anim)")
+    insert_before_regex("data/moves/sfx.asm", r"^\tdb .*; STRUGGLE$",
+        gen2_moves.sfx_rows(NEW_MOVES), f"; {NEW_MOVES[0]['C']}\n")
+    trim_anim_slots()
+
+    # full mode only: compile native effect handlers into the battle engine
+    if MOVE_MODE == "full":
+        ed = _MV.engine_edits()
+        if ed["consts"]:
+            insert_before("constants/move_effect_constants.asm",
+                "DEF NUM_MOVE_EFFECTS", ed["consts"], ed["consts"].split()[1])
+            insert_before_regex("data/moves/effects_pointers.asm",
+                r"^\tassert_table_length NUM_MOVE_EFFECTS", ed["pointers"],
+                ed["pointers"].split()[1])
+            append("engine/battle/effects.asm", "\n" + ed["handlers"],
+                ed["handlers"].split("\n", 1)[0])
+            if ed["residual1"]:
+                insert_before("data/battle/residual_effects_1.asm", "\tdb -1 ; end",
+                    ed["residual1"], ed["residual1"].split()[1])
+        print(f"  full-mode engine: {len(_MV.NATIVE_EFFECTS)} native effect handler(s)")
+
 print("DONE.")

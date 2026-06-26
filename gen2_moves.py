@@ -25,6 +25,67 @@ MOVE_TYPE_REMAP = {"CURSE_TYPE": "GHOST"}
 
 MAX_NAME = 12  # MOVE_NAME_LENGTH - 2 (in-battle "used X!" width)
 
+# Variable-power Gen2 moves carry power 0/1 in the data (the real power is
+# computed at runtime from HP, happiness, party, etc.). Gen1 can't scale, so
+# give each a fixed, playable power. Applied in build_move_table for BOTH modes.
+POWER_OVERRIDE = {
+    "FLAIL": 80, "REVERSAL": 80, "HIDDEN_POWER": 50, "PRESENT": 40,
+    "PURSUIT": 40, "ROLLOUT": 30, "FALSE_SWIPE": 40, "BEAT_UP": 30,
+    "TRIPLE_KICK": 20,
+}
+
+# ---------------------------------------------------------------------------
+# Real Gen2 types (added to the ROM only when MOVE_MODE != off). Gen1's
+# physical/special split is BY TYPE: type < SPECIAL ($14) is physical, else
+# special. So STEEL goes in the unused physical block ($09) and DARK after the
+# special block ($1b). When these exist, gen2_data drops its DARK->GHOST /
+# STEEL->ROCK remap and the new Dark/Steel moves keep their true type.
+# Each: (const, display, is_special). Insertion points are handled by inject.
+NEW_TYPES = [
+    ("STEEL", "STEEL", False),  # physical, slot $09
+    ("DARK",  "DARK",  True),   # special,  slot $1b
+]
+
+# Canonical Gen2 type chart rows for Dark/Steel (attacker, defender, multiplier).
+# The engine's TypeEffects table lists only non-neutral matchups and uses the
+# FIRST match, so appending these new-type rows can't collide with vanilla ones.
+TYPE_MATCHUPS = [
+    # Steel attacking
+    ("STEEL", "ICE", "SUPER_EFFECTIVE"), ("STEEL", "ROCK", "SUPER_EFFECTIVE"),
+    ("STEEL", "STEEL", "NOT_VERY_EFFECTIVE"), ("STEEL", "FIRE", "NOT_VERY_EFFECTIVE"),
+    ("STEEL", "WATER", "NOT_VERY_EFFECTIVE"), ("STEEL", "ELECTRIC", "NOT_VERY_EFFECTIVE"),
+    # attacking Steel (Steel's resistances / weaknesses)
+    ("FIGHTING", "STEEL", "SUPER_EFFECTIVE"), ("GROUND", "STEEL", "SUPER_EFFECTIVE"),
+    ("FIRE", "STEEL", "SUPER_EFFECTIVE"), ("POISON", "STEEL", "NO_EFFECT"),
+    ("NORMAL", "STEEL", "NOT_VERY_EFFECTIVE"), ("FLYING", "STEEL", "NOT_VERY_EFFECTIVE"),
+    ("ROCK", "STEEL", "NOT_VERY_EFFECTIVE"), ("BUG", "STEEL", "NOT_VERY_EFFECTIVE"),
+    ("GRASS", "STEEL", "NOT_VERY_EFFECTIVE"), ("PSYCHIC_TYPE", "STEEL", "NOT_VERY_EFFECTIVE"),
+    ("ICE", "STEEL", "NOT_VERY_EFFECTIVE"), ("DRAGON", "STEEL", "NOT_VERY_EFFECTIVE"),
+    # Dark attacking
+    ("DARK", "PSYCHIC_TYPE", "SUPER_EFFECTIVE"), ("DARK", "GHOST", "SUPER_EFFECTIVE"),
+    ("DARK", "FIGHTING", "NOT_VERY_EFFECTIVE"), ("DARK", "DARK", "NOT_VERY_EFFECTIVE"),
+    ("DARK", "STEEL", "NOT_VERY_EFFECTIVE"),
+    # attacking Dark
+    ("FIGHTING", "DARK", "SUPER_EFFECTIVE"), ("BUG", "DARK", "SUPER_EFFECTIVE"),
+    ("PSYCHIC_TYPE", "DARK", "NO_EFFECT"),
+    ("GHOST", "DARK", "NOT_VERY_EFFECTIVE"),
+]
+
+# Pseudo-animation const slots to drop so NUM_ATTACK_ANIMS stays <= 255 after
+# the 61 new moves push it up by 61. 165 real + 61 new = 226 NUM_ATTACKS; the
+# 37 pseudo-anims would then run 227..263 (>255). Trimming these 8 (all verified
+# zero-reference outside move_constants.asm; ANIM_B4 IS referenced so it's kept,
+# ANIM_B9 kept) brings the ceiling to exactly 255. Both the const line AND its
+# 1:1 pointer in AttackAnimationPointers are removed together by inject.
+ANIM_TRIM = ["ANIM_A8", "ANIM_B1", "ANIM_B2", "ANIM_B3",
+             "ANIM_B5", "ANIM_B6", "ANIM_B7", "ANIM_B8"]
+
+# Every new move points its per-move animation slot at a known-safe vanilla
+# animation (Gen1 has no data for these moves). POUND is a plain physical hit
+# that never crashes; status moves just show it harmlessly.
+GENERIC_ANIM = "PoundAnim"
+GENERIC_SFX = "SFX_POUND"
+
 
 def _read(p):
     with open(p, encoding="utf-8") as fh:
@@ -95,9 +156,37 @@ def build_move_table(dex_list):
         if c not in moves:
             continue  # safety: move with no data row (shouldn't happen)
         d = dict(moves[c])
+        if c in POWER_OVERRIDE:
+            d["power"] = POWER_OVERRIDE[c]
         disp = names.get(c, c.replace("_", " "))[:MAX_NAME]
         out.append(dict(C=c, name=disp, **d))
     return out
+
+
+# ---------- ASM emitters (shared by simple + full; effect chosen by caller) ----------
+def moves_rows(new_moves, resolve_effect):
+    """`move` table rows for moves.asm. resolve_effect(move)->effect const str.
+    Animation field doubles as the move id (the macro's \\1), so it MUST be the
+    move's own const for damage/typing to work; the visual anim is set by the
+    AttackAnimationPointers entry, not this field."""
+    rows = []
+    for m in new_moves:
+        rows.append(f"\tmove {m['C']+',':<14} {resolve_effect(m)+',':<28} "
+                    f"{m['power']:3}, {m['type']+',':<14} {m['acc']:3}, {m['pp']:2}\n")
+    return "".join(rows)
+
+
+def names_rows(new_moves):
+    return "".join(f'\tli "{m["name"]}"\n' for m in new_moves)
+
+
+def anim_rows(new_moves):
+    """Per-move pointers for the first AttackAnimationPointers table."""
+    return "".join(f"\tdw {GENERIC_ANIM}\n" for _ in new_moves)
+
+
+def sfx_rows(new_moves):
+    return "".join(f"\tdb {GENERIC_SFX+',':<22} $00, $80 ; {m['C']}\n" for m in new_moves)
 
 
 if __name__ == "__main__":

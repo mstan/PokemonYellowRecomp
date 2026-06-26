@@ -17,6 +17,7 @@ tools/rgbds/
 
 # --- recompiler output + native build trees ---
 recomp/
+recomp_stock/
 *.o
 *.obj
 *.2bpp
