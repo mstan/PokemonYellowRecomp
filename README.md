@@ -128,9 +128,11 @@ scripts/package.sh extended  # → dist/Pokemon_Yellow_Extended_v0.0.3.zip (stan
 scripts/package.sh stock     # → dist/Pokemon_Yellow_Stock_v0.0.3.zip
 ```
 
-Each `.zip` is a self-contained run folder (exe + the 23-DLL SDL/ANGLE/curl
-runtime + its ROM + a relative `rom.cfg` + `run.bat`), verified to launch under a
-clean `PATH`. **These zips are PRIVATE** — they bundle the ROM (the stock ROM is
+Each `.zip` is a self-contained run folder (exe + the ~7-DLL SDL/ANGLE runtime +
+its ROM + a relative `rom.cfg` + `run.bat`), verified to launch under a clean
+`PATH`. (`package.sh` auto-derives the DLL set from the exe's import tree plus the
+dlopen'd ANGLE driver; with netplay off — `GBRT_NETPLAY=OFF`, the default — curl's
+~16-DLL TLS/HTTP tree is gone, so it's 7 not 23.) **These zips are PRIVATE** — they bundle the ROM (the stock ROM is
 literally copyrighted Yellow; the extended one is ROM-derivative), so `dist/` is
 gitignored and never pushed. Build them locally; don't redistribute.
 
