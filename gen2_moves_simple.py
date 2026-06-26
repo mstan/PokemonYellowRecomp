@@ -86,8 +86,10 @@ EFFECT_MAP = {
     "EFFECT_FORESIGHT":        "SPLASH_EFFECT",
     "EFFECT_MEAN_LOOK":        "SPLASH_EFFECT",   # Spider Web, Mean Look
     "EFFECT_PSYCH_UP":         "SPLASH_EFFECT",
-    "EFFECT_CURSE":            "SPLASH_EFFECT",
     "EFFECT_HEAL_BELL":        "SPLASH_EFFECT",
+
+    # --- partial: a real Gen1 effect that captures part of the Gen2 move ---
+    "EFFECT_CURSE":            "DEFENSE_UP1_EFFECT",  # non-Ghost Curse raises Def (also +Atk/-Spe, dropped)
 }
 
 FALLBACK = "NO_ADDITIONAL_EFFECT"

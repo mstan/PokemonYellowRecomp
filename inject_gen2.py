@@ -678,6 +678,7 @@ if MOVE_MODE != "off" and NEW_MOVES:
             if ed["residual1"]:
                 insert_before("data/battle/residual_effects_1.asm", "\tdb -1 ; end",
                     ed["residual1"], ed["residual1"].split()[1])
-        print(f"  full-mode engine: {len(_MV.NATIVE_EFFECTS)} native effect handler(s)")
+        print(f"  full-mode engine: {len(_MV._ACTIVE)} native effect handler(s) "
+              f"{'(natives DISABLED -> behaves as simple)' if not _MV.ENABLE_NATIVE else ''}")
 
 print("DONE.")

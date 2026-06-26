@@ -212,6 +212,18 @@ NATIVE_EFFECTS = {
 """),
 }
 
+# ---------------------------------------------------------------------------
+# SHELVED. The in-engine native handlers above caused battle instability (a
+# freeze traced to the Metal Claw / Steel Wing reuse of StatModifierUpEffect,
+# which re-applies burn/paralysis penalties) and crossed the project's "extend
+# Yellow, don't rebuild the engine" line. They are kept in this file + git
+# history for reference, but DISABLED: with ENABLE_NATIVE = False the build
+# applies ZERO battle-engine edits, so `full` mode behaves exactly like the
+# stable `simple` mode. Re-enabling should only be done one effect at a time
+# behind a real in-battle test loop. See GEN2_MOVE_ADAPTATION.md.
+ENABLE_NATIVE = False
+_ACTIVE = NATIVE_EFFECTS if ENABLE_NATIVE else {}
+
 # Effects that are full-fidelity through an existing Gen1 const (TIER gen1).
 # Used only for the human-readable tier report; resolve() routes them via
 # simple's map automatically (which already picks these exact consts).
@@ -230,13 +242,13 @@ def resolve(move):
     EFFECT_GEN2_* const; everything else defers to simple's best-effort map
     (which is full-fidelity for the gen1-exact tier)."""
     e = move["effect"]
-    if e in NATIVE_EFFECTS:
-        return NATIVE_EFFECTS[e]["const"]
+    if e in _ACTIVE:
+        return _ACTIVE[e]["const"]
     return simple.resolve(move)
 
 
 def tier(effect):
-    if effect in NATIVE_EFFECTS:
+    if effect in _ACTIVE:
         return "native"
     if effect in GEN1_EXACT:
         return "gen1"
@@ -245,12 +257,12 @@ def tier(effect):
 
 def engine_edits():
     """Return the ASM fragments inject_gen2.py splices into the engine to wire
-    up the native handlers. Empty lists if no native effects are defined."""
-    consts = "".join(f"\tconst {d['const']}\n" for d in NATIVE_EFFECTS.values())
-    pointers = "".join(f"\tdw {d['ptr']}\n" for d in NATIVE_EFFECTS.values())
-    handlers = "\n".join(d["asm"] for d in NATIVE_EFFECTS.values())
+    up the native handlers. Empty when ENABLE_NATIVE is False (the default)."""
+    consts = "".join(f"\tconst {d['const']}\n" for d in _ACTIVE.values())
+    pointers = "".join(f"\tdw {d['ptr']}\n" for d in _ACTIVE.values())
+    handlers = "\n".join(d["asm"] for d in _ACTIVE.values())
     residual1 = "".join(
-        f"\tdb {d['const']}\n" for d in NATIVE_EFFECTS.values()
+        f"\tdb {d['const']}\n" for d in _ACTIVE.values()
         if d["category"] == "residual1")
     return dict(consts=consts, pointers=pointers, handlers=handlers,
                 residual1=residual1)

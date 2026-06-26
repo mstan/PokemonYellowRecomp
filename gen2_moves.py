@@ -32,6 +32,9 @@ POWER_OVERRIDE = {
     "FLAIL": 80, "REVERSAL": 80, "HIDDEN_POWER": 50, "PRESENT": 40,
     "PURSUIT": 40, "ROLLOUT": 30, "FALSE_SWIPE": 40, "BEAT_UP": 30,
     "TRIPLE_KICK": 20,
+    # PAIN_SPLIT maps to Super Fang (halve target HP); Gen1 treats power-0 moves
+    # as status moves and skips the effect, so give it power 1 to make it fire.
+    "PAIN_SPLIT": 1,
 }
 
 # ---------------------------------------------------------------------------

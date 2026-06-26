@@ -41,14 +41,14 @@ PARTY_DEF = [
     ("TYRANITAR",  ["CRUNCH", "PURSUIT", "METAL_CLAW", "ANCIENTPOWER"], "TYRANITAR"),
     # Steel/Flying: Steel Wing(native Def↑), Faint Attack(always-hit), Megahorn(dmg), False Swipe(dmg)
     ("SKARMORY",   ["STEEL_WING", "FAINT_ATTACK", "MEGAHORN", "FALSE_SWIPE"], "SKARMORY"),
-    # Heal Bell(native), Milk Drink(heal), Charm(Atk↓2), Sweet Kiss(confuse)
-    ("BLISSEY",    ["HEAL_BELL", "MILK_DRINK", "CHARM", "SWEET_KISS"], "BLISSEY"),
-    # Psych Up(native), Future Sight(dmg), Mirror Coat(≈Bide), Conversion2(≈Conversion)
-    ("GIRAFARIG",  ["PSYCH_UP", "FUTURE_SIGHT", "MIRROR_COAT", "CONVERSION2"], "GIRAFARIG"),
+    # Milk Drink(heal), Charm(Atk↓2), Sweet Kiss(confuse), Sweet Scent(Eva↓)
+    ("BLISSEY",    ["MILK_DRINK", "CHARM", "SWEET_KISS", "SWEET_SCENT"], "BLISSEY"),
+    # Swagger(≈confuse), Future Sight(dmg), Mirror Coat(≈Bide), Conversion2(≈Conversion)
+    ("GIRAFARIG",  ["SWAGGER", "FUTURE_SIGHT", "MIRROR_COAT", "CONVERSION2"], "GIRAFARIG"),
     # Sacred Fire(burn), Morning Sun(heal), Spark(para), Powder Snow(freeze)
     ("HO_OH",      ["SACRED_FIRE", "MORNING_SUN", "SPARK", "POWDER_SNOW"], "HO-OH"),
-    # Pain Split(native), Giga Drain(drain), Snore(flinch), Spite(≈Disable)
-    ("MISDREAVUS", ["PAIN_SPLIT", "GIGA_DRAIN", "SNORE", "SPITE"], "MISDREAVUS"),
+    # Pain Split(≈Super Fang, tweaked), Curse(≈Def↑, tweaked), Snore(flinch), Spite(≈Disable)
+    ("MISDREAVUS", ["PAIN_SPLIT", "CURSE", "SNORE", "SPITE"], "MISDREAVUS"),
 ]
 
 
