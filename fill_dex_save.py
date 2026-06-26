@@ -22,8 +22,8 @@ SYM = os.path.join(HERE, "pokeyellow", "pokeyellow.sym")
 SRC = r"C:\Users\Matthew\Desktop\Pokemon - Yellow Version - Special Pikachu Edition (USA, Europe) (CGB+SGB Enhanced).sav"
 DST = os.path.join(HERE, "recomp", "build", "Pokemon_Yellow_Extended_FILLED.sav")
 
-NUM_POKEMON = 215
-DEX_BYTES = (NUM_POKEMON + 7) // 8        # 27
+NUM_POKEMON = 251
+DEX_BYTES = (NUM_POKEMON + 7) // 8        # 32
 BOX_SIZE = 1122                            # bytes per stored box
 BOX_SLOTS = 20
 NUM_BOXES = 12
@@ -53,6 +53,22 @@ def move_value_map():
     s = open(os.path.join(HERE, "pokeyellow", "constants", "move_constants.asm"), encoding="utf-8").read()
     names = re.findall(r"^\s*const ([A-Z0-9_]+)", s, re.M)
     return {n: i for i, n in enumerate(names)}  # NO_MOVE=0, POUND=1, ...
+
+
+def species_index_map():
+    """Map species CONST -> internal index from the injected pokemon_constants.
+    NO_MON is the first const ($00); contiguous mon sit at $BF-$FE and gap-reuse
+    mon at former const_skip slots, so this is the only reliable source."""
+    s = open(os.path.join(HERE, "pokeyellow", "constants", "pokemon_constants.asm"), encoding="utf-8").read()
+    out, idx = {}, -1
+    for line in s.splitlines():
+        t = line.strip()
+        if t.startswith("const ") or t == "const_skip" or t.startswith("const_skip "):
+            idx += 1
+            m = re.match(r"const ([A-Z0-9_]+)", t)
+            if m:
+                out[m.group(1)] = idx
+    return out
 
 
 def gen1_name(s):
@@ -87,11 +103,12 @@ def stats_at_50(base):
 
 
 MOVE = move_value_map()
+SPECIES_IDX = species_index_map()
 
 
 def mon_core(m, otid):
     """Shared 33-byte box-struct prefix for a generated mon dict m."""
-    species = 0xBF + (m["dex"] - 152)
+    species = SPECIES_IDX[m["C"]]
     t1, t2 = TYPE[m["ty"][0]], TYPE[m["ty"][1]]
     moves = [MOVE.get(mv, 0) for mv in m["l1"]]
     pp = [20 if mv else 0 for mv in moves]
@@ -192,13 +209,13 @@ def main():
     otid = bytes(ext[F_PID:F_PID + 2])
 
     # ---- 2. mon data for dex 152..215 ----
-    mons = gen2_data.build_mons(list(range(152, 216)))
+    mons = gen2_data.build_mons(list(range(152, 252)))
     by_dex = {m["dex"]: m for m in mons}
-    order = list(range(152, 216))  # 64 Johto mon, in dex order
+    order = list(range(152, 252))  # 100 Johto mon, in dex order
 
-    # ---- 3. party: first 6 Johto mon ----
+    # ---- 3. party: gap-reuse mon (216+) so the new index path is testable ----
     party = bytearray()
-    party_dex = order[:6]
+    party_dex = [251, 249, 250, 248, 245, 216]  # Celebi, Lugia, Ho-Oh, Tyranitar, Suicune, Teddiursa
     party += bytes([len(party_dex)])
     structs = []
     for d in party_dex:

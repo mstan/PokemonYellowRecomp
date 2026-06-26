@@ -81,16 +81,40 @@ MONS = [
 ]
 
 # ---- Johto dex 161+ : data generated from pokecrystal (see gen2_data.py) ----
-# Internal index space is 1 byte capped at $FE ($FF = party-list terminator);
-# FERALIGATR sits at $C7, so $C8-$FE gives 55 contiguous slots = dex 161-215.
-# The upper Johto (216-251) needs MissingNo-gap reuse, a later sub-phase.
+# Internal index ('idx') is a 1-byte species id, capped at $FE ($FF = party
+# terminator). FERALIGATR=$C7, so $C8-$FE = 55 contiguous slots = dex 161-215.
+# Dex 216-251 (36 mon) reuse the 36 MissingNo const_skip gaps in $01-$BE.
 # Override the range for incremental testing via GEN2_DEX_LO / GEN2_DEX_HI.
+import re as _re
 import gen2_data
 _LO = int(os.environ.get("GEN2_DEX_LO", "161"))
-_HI = int(os.environ.get("GEN2_DEX_HI", "215"))
+_HI = int(os.environ.get("GEN2_DEX_HI", "251"))
 _STARTERS = [m["C"] for m in MONS]
 MONS += gen2_data.build_mons(list(range(_LO, _HI + 1)), extra_species=_STARTERS)
-print(f"MONS: {len(MONS)} total ({len(_STARTERS)} starters + dex {_LO}-{_HI})")
+
+def _gap_indexes():
+    """Internal indexes of the const_skip (MissingNo) slots, in index order.
+    RHYDON=$01 is the first const; the i-th const/const_skip line is index i."""
+    s = open(os.path.join(PY, "constants/pokemon_constants.asm"), encoding="utf-8").read()
+    idx, gaps = -1, []   # NO_MON is the first const line and is index $00
+    for line in s.splitlines():
+        t = line.strip()
+        if t.startswith("const ") or t == "const_skip" or t.startswith("const_skip "):
+            idx += 1
+            if t.startswith("const_skip"):
+                gaps.append(idx)
+    return gaps
+
+_GAPS = _gap_indexes()
+# assign each mon its internal index: 152-215 contiguous from $BF; 216-251 -> gaps
+for _m in MONS:
+    _d = _m["dex"]
+    _m["idx"] = 0xBF + (_d - 152) if _d <= 215 else _GAPS[_d - 216]
+CONTIG = [m for m in MONS if m["dex"] <= 215]   # appended at index tail $BF-$FE
+GAP    = [m for m in MONS if m["dex"] >= 216]    # reuse scattered MissingNo slots
+assert len(GAP) <= len(_GAPS), f"need {len(GAP)} gaps, have {len(_GAPS)}"
+print(f"MONS: {len(MONS)} total ({len(_STARTERS)} starters, "
+      f"{len(CONTIG)-len(_STARTERS)} contiguous 161-215, {len(GAP)} gap-reuse 216-{_HI})")
 
 def read(p):
     with open(p, encoding="utf-8") as fh: return fh.read()
@@ -115,6 +139,28 @@ def append(relpath, block, guard):
         print(f"  skip (already injected): {relpath}"); return
     if not s.endswith("\n"): s += "\n"
     write(p, s + block); print(f"  appended: {relpath}")
+
+def replace_at_indexes(relpath, entry_regex, items, base, guard):
+    """Replace the data entry at specific INTERNAL INDEXES in an index-ordered
+    table. items = [(internal_index, replacement_line), ...]; entry_regex must
+    match EVERY data entry (so positions line up). base = index of the first
+    matched entry (0 if the table includes NO_MON/$00, else 1). Used for gap
+    reuse: each gap-reuse mon's entry replaces the MissingNo placeholder sitting
+    at its const_skip index — keyed by index, NOT by a MissingNo comment (which
+    is unreliable: e.g. cries tags fossil/ghost slots MissingNo too). Idempotent."""
+    p = os.path.join(PY, relpath); s = read(p)
+    if guard in s:
+        print(f"  skip (already gap-filled): {relpath}"); return
+    matches = list(_re.finditer(entry_regex, s, _re.M))
+    out = s
+    for idx, repl in sorted(items, reverse=True):  # back-to-front keeps offsets
+        pos = idx - base
+        if not (0 <= pos < len(matches)):
+            print(f"  !! {relpath}: index ${idx:02X} -> pos {pos} of {len(matches)} out of range")
+            sys.exit(1)
+        m = matches[pos]
+        out = out[:m.start()] + repl + out[m.end():]
+    write(p, out); print(f"  gap-filled {len(items)}: {relpath}")
 
 def apply_engine_patch():
     """Apply patches/engine.patch (the manual engine edits that aren't simple
@@ -181,8 +227,14 @@ relocate_growing_tables()
 
 # ---- 1. constants ----
 print("constants:")
+# internal-index list: contiguous mon append at the tail ($BF-$FE); gap-reuse
+# mon REPLACE const_skip slots in place (NUM_POKEMON_INDEXES stays the same).
 insert_before("constants/pokemon_constants.asm", "DEF NUM_POKEMON_INDEXES",
-    "".join(f"\tconst {m['C']}\n" for m in MONS), "const CHIKORITA")
+    "".join(f"\tconst {m['C']}\n" for m in CONTIG), "const CHIKORITA")
+if GAP:
+    replace_at_indexes("constants/pokemon_constants.asm", r"^\tconst(?:_skip| [A-Z0-9_]+).*$",
+        [(m["idx"], f"\tconst {m['C']}") for m in GAP], 0, f"\tconst {GAP[0]['C']}\n")
+# pokedex (dex-number) consts: all new mon append in dex order.
 insert_before("constants/pokedex_constants.asm", "DEF NUM_POKEMON ",
     "".join(f"\tconst DEX_{m['C']}\n" for m in MONS), "DEX_CHIKORITA")
 
@@ -217,15 +269,28 @@ for m in MONS:
     write(os.path.join(PY, f"data/pokemon/base_stats/{m['f']}.asm"), body)
 print(f"  wrote {len(MONS)} base_stats files")
 
-# ---- 3. names / cries / dex_order / palettes / menu_icons (table appends) ----
+# ---- 3. names / cries / dex_order / palettes / menu_icons ----
+# names/cries/dex_order are INDEX-ordered (assert NUM_POKEMON_INDEXES): append
+# the contiguous mon, gap-fill the rest into their MissingNo slots. palettes/
+# menu_icons are DEX-ordered (NUM_POKEMON): append all new mon in dex order.
 print("tables:")
+def cry(i, camel):
+    return f"\tmon_cry SFX_CRY_25, ${(0x40+i*5)&0xFF:02X}, ${(0x60+i*3)&0xFF|1:02X} ; {camel}"
 insert_before("data/pokemon/names.asm", "\tassert_table_length NUM_POKEMON_INDEXES",
-    "".join(f'\tdname "{m.get("name", m["C"])}"\n' for m in MONS), '"CHIKORITA"')
+    "".join(f'\tdname "{m.get("name", m["C"])}"\n' for m in CONTIG), '"CHIKORITA"')
 insert_before("data/pokemon/cries.asm", "\tassert_table_length NUM_POKEMON_INDEXES",
-    "".join(f"\tmon_cry SFX_CRY_25, ${(0x40+i*5)&0xFF:02X}, ${(0x60+i*3)&0xFF|1:02X} ; {m['Camel']}\n"
-            for i,m in enumerate(MONS)), "; Chikorita")
+    "".join(cry(i, m["Camel"]) + "\n" for i, m in enumerate(CONTIG)), "; Chikorita")
 insert_before("data/pokemon/dex_order.asm", "\tassert_table_length NUM_POKEMON_INDEXES",
-    "".join(f"\tdb DEX_{m['C']}\n" for m in MONS), "DEX_CHIKORITA")
+    "".join(f"\tdb DEX_{m['C']}\n" for m in CONTIG), "DEX_CHIKORITA")
+if GAP:
+    replace_at_indexes("data/pokemon/names.asm", r'^\tdname ".*"$',
+        [(m["idx"], f'\tdname "{m.get("name", m["C"])}"') for m in GAP], 1,
+        f'\tdname "{GAP[0].get("name", GAP[0]["C"])}"')
+    replace_at_indexes("data/pokemon/cries.asm", r"^\tmon_cry .*$",
+        [(m["idx"], cry(i, m["Camel"])) for i, m in enumerate(GAP)], 1,
+        cry(0, GAP[0]["Camel"]))
+    replace_at_indexes("data/pokemon/dex_order.asm", r"^\tdb (?:DEX_[A-Z0-9_]+|0)\b.*$",
+        [(m["idx"], f"\tdb DEX_{m['C']}") for m in GAP], 1, f"\tdb DEX_{GAP[0]['C']}")
 insert_before("data/pokemon/palettes.asm", "\tassert_table_length NUM_POKEMON + 1",
     "".join(f"\tdb {m['pal']:<13}; {m['C']}\n" for m in MONS), "; CHIKORITA")
 insert_before("data/pokemon/menu_icons.asm", "\tend_nybble_array NUM_POKEMON",
@@ -247,10 +312,14 @@ def append_evos_pointers():
     for i in range(start+1, len(lines)):
         if lines[i].lstrip().startswith("dw "): last_dw = i
         elif lines[i].strip()=="" and last_dw>start: break
-    ins = [f"\tdw {m['Camel']}EvosMoves" for m in MONS]
+    ins = [f"\tdw {m['Camel']}EvosMoves" for m in CONTIG]  # contiguous at the tail
     lines[last_dw+1:last_dw+1] = ins
     write(p, "\n".join(lines)); print("  patched evos pointer table")
 append_evos_pointers()
+if GAP:  # gap mon: fill their scattered evos pointer slots by internal index
+    replace_at_indexes("data/pokemon/evos_moves.asm", r"^\tdw [A-Za-z0-9]+EvosMoves$",
+        [(m["idx"], f"\tdw {m['Camel']}EvosMoves") for m in GAP], 1,
+        f"\tdw {GAP[0]['Camel']}EvosMoves")
 def evo_lines(m):
     """Emit Gen1 evolution bytes from either the new typed 'evos' list or the
     legacy single 'evo' tuple. Gen1 byte formats:
@@ -279,9 +348,15 @@ for m in MONS:
 append("data/pokemon/evos_moves.asm", "\n"+"\n".join(evo_blocks), "ChikoritaEvosMoves:")
 
 # ---- 5. dex_entries (pointer table + data blocks) + dex_text ----
+# Pointer table is INDEX-ordered: contiguous append + gap-fill MissingNoDexEntry.
+# Entry/text data blocks are label-referenced -> append all (position-free).
 print("dex entries/text:")
 insert_before("data/pokemon/dex_entries.asm", "\tassert_table_length NUM_POKEMON_INDEXES",
-    "".join(f"\tdw {m['Camel']}DexEntry\n" for m in MONS), "dw ChikoritaDexEntry")
+    "".join(f"\tdw {m['Camel']}DexEntry\n" for m in CONTIG), "dw ChikoritaDexEntry")
+if GAP:
+    replace_at_indexes("data/pokemon/dex_entries.asm", r"^\tdw [A-Za-z0-9]+DexEntry$",
+        [(m["idx"], f"\tdw {m['Camel']}DexEntry") for m in GAP], 1,
+        f"\tdw {GAP[0]['Camel']}DexEntry")
 dex_blocks = []
 for m in MONS:
     dex_blocks.append(f"""{m['Camel']}DexEntry:
@@ -326,17 +401,36 @@ pics = "\n".join(
     f'SECTION "Pics {m["Camel"]}", ROMX\n'
     f'{m["Camel"]}PicFront:: INCBIN "gfx/pokemon/front/{m["f"]}.pic"\n'
     f'{m["Camel"]}PicBack::  INCBIN "gfx/pokemon/back/{m["f"]}b.pic"\n' for m in MONS)
-# Bank table + a banked resolver (GetPicBankFar). The whole bank-selection
-# logic — vanilla "Pics 1-5"/fossil ranges AND the Gen2 table lookup — lives
-# here in ROMX (it can read Gen2PicBanks in-bank). The home resolver shrinks to
-# a single far call, which FREES ROM0 space (the vanilla range chain was ~35B)
-# rather than growing it. GetPicBankFar takes species in c, returns bank in e.
+# Full internal-index -> pic-bank table (PicBankByIndex) + a banked resolver.
+# One byte per index $01-$FE: the mon's pic bank via BANK(), or 0 if the index
+# isn't an injected mon (-> fall back to vanilla "Pics 1-5"/fossil ranges). A
+# full-index table (not species>=CHIKORITA) is required because gap-reuse mon
+# sit at LOW indexes scattered through $01-$BE. The resolver lives in ROMX (reads
+# the table in-bank); the home side shrinks to one far call, freeing ROM0.
+idx2camel = {m["idx"]: m["Camel"] for m in MONS}
+picrows = "".join(
+    (f'\tdb BANK({idx2camel[i]}PicFront) ; ${i:02X} {idx2camel[i]}\n' if i in idx2camel
+     else f'\tdb 0 ; ${i:02X}\n')
+    for i in range(1, 255))
 banktable = (
-    'SECTION "Gen2 Pic Banks", ROMX\n'
-    'Gen2PicBanks::\n' +
-    "".join(f'\tdb BANK({m["Camel"]}PicFront) ; {m["C"]}\n' for m in MONS) +
+    'SECTION "Pic Bank Table", ROMX\n'
+    'PicBankByIndex::\n' + picrows +
     '\nGetPicBankFar::\n'
     '; in: c = species index ; out: e = pic ROM bank\n'
+    '\tld a, c\n'
+    '\tand a\n'
+    '\tjr z, .vanilla\n'
+    '\tdec a\n'
+    '\tld e, a\n'
+    '\tld d, 0\n'
+    '\tld hl, PicBankByIndex\n'
+    '\tadd hl, de\n'
+    '\tld a, [hl]\n'
+    '\tand a\n'
+    '\tjr z, .vanilla\n'
+    '\tld e, a\n'
+    '\tret\n'
+    '.vanilla\n'
     '\tld a, c\n'
     '\tcp FOSSIL_KABUTOPS\n'
     '\tjr nz, .nf\n'
@@ -363,17 +457,7 @@ banktable = (
     '\tld e, BANK("Pics 4")\n'
     '\tret\n'
     '.n4\n'
-    '\tcp CHIKORITA\n'
-    '\tjr nc, .gen2\n'
     '\tld e, BANK("Pics 5")\n'
-    '\tret\n'
-    '.gen2\n'
-    '\tsub CHIKORITA\n'
-    '\tld e, a\n'
-    '\tld d, 0\n'
-    '\tld hl, Gen2PicBanks\n'
-    '\tadd hl, de\n'
-    '\tld e, [hl]\n'
     '\tret\n')
 append("gfx/pics.asm", "\n" + pics + "\n" + banktable, "Pics Chikorita")
 # Home resolver: replace the entire vanilla range chain with one far call.
