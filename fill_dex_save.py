@@ -79,6 +79,8 @@ def gen1_name(s):
         elif "a" <= c <= "z": out.append(0xA0 + ord(c) - ord("a"))
         elif "0" <= c <= "9": out.append(0xF6 + ord(c) - ord("0"))
         elif c == " ": out.append(0x7F)
+        elif c == "-": out.append(0xE3)   # Gen1 charmap hyphen (HO-OH)
+        elif c == ".": out.append(0xE8)
         else: out.append(0x50)
     out.append(0x50)
     while len(out) < 11: out.append(0x50)
