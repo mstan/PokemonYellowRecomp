@@ -53,3 +53,6 @@ rekey_frame.png
 # the ROM is built locally from pret. Track scripts/docs only.
 dist/
 __pycache__/
+# launcher build artifacts (built locally from launcher/yellow.c)
+/yellow.exe
+/yellow.cfg

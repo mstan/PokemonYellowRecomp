@@ -104,6 +104,21 @@ recoverable** (`git -C pokeyellow checkout . && git -C pokeyellow clean -fd`).
 Distinct `output_prefix`es keep the two exes/saves separate, and the runner's
 `--differential` oracle can A/B them.
 
+**Single entry point — `yellow.exe`.** Each backend is a *separate* statically
+recompiled exe (gbrecomp bakes one ROM's code per binary), so `launcher/yellow.c`
+builds a tiny `yellow.exe` that picks one and forwards your args:
+
+```bash
+bash launcher/build.sh            # → ./yellow.exe (+ default ./yellow.cfg)
+./yellow.exe                      # runs the variant from yellow.cfg (default: extended)
+YELLOW_VARIANT=stock ./yellow.exe # env overrides the cfg
+```
+
+Variant resolution: `YELLOW_VARIANT` env → first line of `yellow.cfg` →
+`extended`. It launches `Pokemon_Yellow_<Variant>.exe` either co-located (packaged
+layout) or from `recomp[_stock]/build/` (dev layout). `yellow.exe`/`yellow.cfg`
+are build artifacts (gitignored); the source + a default cfg live in `launcher/`.
+
 > A clean "new game + 3 starters" save can be generated with
 > `synth_starter_save.py`, and the validation save (party + full PC + complete
 > Pokédex) with `fill_dex_save.py`. Both are **extended-only** — stock Yellow
