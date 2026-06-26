@@ -10,17 +10,18 @@ Auto-generated from `gen2_moves.py` + `gen2_moves_simple.py` + `gen2_moves_full.
 
   | tier | count | meaning |
   |---|---|---|
-  | **native** | 2 | real new engine code (full-fidelity Gen2 behaviour) |
+  | **native** | 3 | real new engine code (full-fidelity Gen2 behaviour) |
   | **gen1-exact** | 21 | reuses a Gen1 effect that already matches — full-fidelity, no new code |
-  | **fallback** | 38 | best-effort: plain damage, an approximation, or a no-op Splash |
+  | **fallback** | 37 | best-effort: plain damage, an approximation, or a no-op Splash |
 
 > In `full`, **native + gen1-exact = fully working** (23 moves). **fallback** moves are the remaining port work — they're playable but lossy (see the Result column).
 
-## ✅ Native (real new engine handlers) — 2
+## ✅ Native (real new engine handlers) — 3
 
 | Move | Type | Pow | Gen2 effect | `full` result | `simple` result |
 |---|---|---:|---|---|---|
 | PSYCH UP | NORMAL | 0 | `EFFECT_PSYCH_UP` | copy target's stat stages onto user (native) | no-op (animation only, “nothing happened”) |
+| PAIN SPLIT | NORMAL | 0 | `EFFECT_PAIN_SPLIT` | EFFECT_GEN2_PAIN_SPLIT | halve target HP |
 | HEAL BELL | NORMAL | 0 | `EFFECT_HEAL_BELL` | cure entire party's status (native) | no-op (animation only, “nothing happened”) |
 
 ## ✅ Gen1-exact (full-fidelity via an existing Gen1 effect) — 21
@@ -49,7 +50,7 @@ Auto-generated from `gen2_moves.py` + `gen2_moves_simple.py` + `gen2_moves_full.
 | AEROBLAST | FLYING | 100 | `EFFECT_NORMAL_HIT` | plain damage | plain damage |
 | SACRED FIRE | FIRE | 100 | `EFFECT_SACRED_FIRE` | damage + burn chance | damage + burn chance |
 
-## 🟡 Fallback (best-effort — remaining port work) — 38
+## 🟡 Fallback (best-effort — remaining port work) — 37
 
 | Move | Type | Pow | Gen2 effect | `full` result | `simple` result |
 |---|---|---:|---|---|---|
@@ -70,7 +71,6 @@ Auto-generated from `gen2_moves.py` + `gen2_moves_simple.py` + `gen2_moves_full.
 | PURSUIT | DARK | 40 | `EFFECT_PURSUIT` | plain damage | plain damage |
 | CURSE | GHOST | 0 | `EFFECT_CURSE` | no-op (animation only, “nothing happened”) | no-op (animation only, “nothing happened”) |
 | SPITE | GHOST | 0 | `EFFECT_SPITE` | disable a move | disable a move |
-| PAIN SPLIT | NORMAL | 0 | `EFFECT_PAIN_SPLIT` | halve target HP | halve target HP |
 | HIDDEN POWER | NORMAL | 50 | `EFFECT_HIDDEN_POWER` | plain damage | plain damage |
 | MIRROR COAT | PSYCHIC | 1 | `EFFECT_MIRROR_COAT` | store & return 2x damage | store & return 2x damage |
 | DESTINY BOND | GHOST | 0 | `EFFECT_DESTINY_BOND` | no-op (animation only, “nothing happened”) | no-op (animation only, “nothing happened”) |
@@ -92,8 +92,8 @@ Auto-generated from `gen2_moves.py` + `gen2_moves_simple.py` + `gen2_moves_full.
 | SKETCH | NORMAL | 0 | `EFFECT_SKETCH` | copy a move | copy a move |
 | TRIPLE KICK | FIGHTING | 20 | `EFFECT_TRIPLE_KICK` | multi-hit damage | multi-hit damage |
 
-## Known gaps / bugs
+## Known gaps / caveats
 
-- **Pain Split** maps to `SUPER_FANG_EFFECT` but its move-power is 0, so the engine treats it as a status move and skips the effect → shows “no effect”. Needs power ≥1 or a native handler.
+- **Psych Up** (native) copies the target's stat-STAGE bytes but does not recompute the stored modified stats (`wBattleMonAttack` …), so the stages transfer but won't fully affect damage until the next stat change. Partial — needs a stat recompute pass.
 - All `no-op (Splash)` fallbacks (weather, hazards, Protect, Perish Song, Destiny Bond, Curse, Foresight, Lock-On, Mean Look, Safeguard, Psych-Up-in-`simple`) need battle-loop hooks to work for real — these are the next native tranche.
 - Variable-power moves (Flail, Reversal, Hidden Power, Present, Pursuit, Rollout, False Swipe, Beat Up, Triple Kick) use a fixed power from `gen2_moves.POWER_OVERRIDE`.

@@ -70,6 +70,74 @@ NATIVE_EFFECTS = {
 	jr nz, .loop
 	ret
 """),
+    "EFFECT_PAIN_SPLIT": dict(
+        const="EFFECT_GEN2_PAIN_SPLIT", ptr="Gen2PainSplitEffect", category="residual1",
+        asm="""Gen2PainSplitEffect:
+; Pain Split: set both the user's and target's current HP to the average of the
+; two (each capped at its own max HP). HP is a big-endian 2-byte field. Only the
+; in-battle HP copies are touched; the engine writes wBattleMonHP back to the
+; party on switch-out, so no manual party-copy sync is needed.
+	call PlayCurrentMoveAnimation
+	ld hl, wBattleMonHP
+	ld a, [hli]
+	ld b, a
+	ld a, [hl]
+	ld c, a              ; bc = player HP
+	ld hl, wEnemyMonHP
+	ld a, [hli]
+	ld d, a
+	ld a, [hl]
+	ld e, a              ; de = enemy HP
+	ld a, c
+	add e
+	ld c, a
+	ld a, b
+	adc d
+	ld b, a              ; bc = sum (<= 1998, fits 16 bits)
+	srl b
+	rr c                 ; bc = average
+	; player: store min(avg, wBattleMonMaxHP)
+	ld hl, wBattleMonMaxHP
+	ld a, [hli]
+	ld d, a
+	ld a, [hl]
+	ld e, a              ; de = player max HP
+	push bc
+	ld a, e
+	sub c
+	ld a, d
+	sbc b                ; carry set if maxHP < avg
+	jr nc, .pStore
+	ld b, d
+	ld c, e              ; clamp to max
+.pStore
+	ld hl, wBattleMonHP
+	ld a, b
+	ld [hli], a
+	ld a, c
+	ld [hl], a
+	pop bc
+	; enemy: store min(avg, wEnemyMonMaxHP)
+	ld hl, wEnemyMonMaxHP
+	ld a, [hli]
+	ld d, a
+	ld a, [hl]
+	ld e, a              ; de = enemy max HP
+	ld a, e
+	sub c
+	ld a, d
+	sbc b                ; carry set if maxHP < avg
+	jr nc, .eStore
+	ld b, d
+	ld c, e
+.eStore
+	ld hl, wEnemyMonHP
+	ld a, b
+	ld [hli], a
+	ld a, c
+	ld [hl], a
+	ret
+"""),
     "EFFECT_PSYCH_UP": dict(
         const="EFFECT_GEN2_PSYCH_UP", ptr="Gen2PsychUpEffect", category="residual1",
         asm="""Gen2PsychUpEffect:
