@@ -222,8 +222,8 @@ def apply_engine_patch():
     """RED PORT: the only manual engine edit needed is the GetName HM01-cap fix
     (gate the TM/HM-name shortcut on ITEM_NAME so the dex can exceed 190 indexes).
     Done inline (no git patch). The WRAM/stack growth is handled by
-    size_pokedex_wram(); back sprites use the vanilla 4x4 path (downscaled 32x32),
-    so no init_battle edit is required. Idempotent."""
+    size_pokedex_wram(); native 48x48 back sprites are handled by
+    patch_back_sprite_engine(). Idempotent."""
     p = os.path.join(PY, "home/names2.asm"); s = read(p)
     if ".notMachine" in s:
         print("  skip (GetName fix already applied)"); return
@@ -252,6 +252,67 @@ def apply_engine_patch():
         print("  !! GetName pattern not found in home/names2.asm"); sys.exit(1)
     write(p, s.replace(old, new, 1))
     print("  applied GetName ITEM_NAME gating (home/names2.asm)")
+
+def patch_back_sprite_engine():
+    """Native 48x48 (6x6) back sprites for the back-ported Gen2 mon.
+
+    Vanilla Gen1 backs are 4x4 tiles (32x32) and LoadMonBackPic doubles them with
+    ScaleSpriteByTwo to fill the 7x7 display -> blocky. The Gen2/pokecrystal source
+    backs are 48x48; rather than downscale them to 32x32 and re-upscale at runtime
+    (blurry), we ship them at native 48x48 and teach LoadMonBackPic to render a
+    6-tile-wide back the same way front sprites are rendered (center+merge, no 2x).
+
+    pokered's LoadMonBackPic lives in engine/battle/core.asm (Yellow's is in
+    init_battle.asm — do NOT blind-port the file). _UncompressSpriteData stores
+    wSpriteWidth/wSpriteHeight as tiles*8, so a 6-tile back reads as 48; gen1 backs
+    read as 32 and fall through to the unchanged ScaleSpriteByTwo path. The two
+    other ScaleSpriteByTwo sites (LoadPlayerBackPic, HoFLoadPlayerPics) render the
+    fixed trainer sprite, never a mon, so they are left alone. Idempotent."""
+    p = os.path.join(PY, "engine/battle/core.asm"); s = read(p)
+    if ".nativeBackPic" in s:
+        print("  skip (native back path already applied)"); return
+    old = (
+        '\tld hl, wMonHBackSprite - wMonHeader\n'
+        '\tcall UncompressMonSprite\n'
+        '\tpredef ScaleSpriteByTwo\n'
+        '\tld de, vBackPic\n'
+        '\tcall InterlaceMergeSpriteBuffers ; combine the two buffers to a single 2bpp sprite\n'
+        '\tld hl, vSprites\n')
+    new = (
+        '\tld hl, wMonHBackSprite - wMonHeader\n'
+        '\tcall UncompressMonSprite\n'
+        '; RED PORT (Gen2 graft): native 48x48 back sprites. Back-ported Gen2 mon ship\n'
+        '; a native 6x6 (48x48) back; skip the 2x upscale and center+merge at native\n'
+        '; resolution (the front-sprite path), avoiding downscale+re-upscale blur.\n'
+        '; _UncompressSpriteData stores wSpriteWidth/Height as tiles*8, so 6 tiles = 48.\n'
+        '\tld a, [wSpriteWidth]\n'
+        '\tcp 6 * 8                ; 6-tile-wide back (back-ported Gen2)?\n'
+        '\tjr z, .nativeBackPic\n'
+        '\tpredef ScaleSpriteByTwo\n'
+        '\tld de, vBackPic\n'
+        '\tcall InterlaceMergeSpriteBuffers ; combine the two buffers to a single 2bpp sprite\n'
+        '\tjr .copyToVRAM\n'
+        '.nativeBackPic\n'
+        '; LoadUncompressedSpriteData wants width in a (low nybble) and height in c\n'
+        '; (high nybble), both in TILES -> convert bytes->tiles (>>3).\n'
+        '\tld a, [wSpriteHeight]\n'
+        '\tsrl a\n'
+        '\tsrl a\n'
+        '\tsrl a                   ; height in tiles\n'
+        '\tswap a                  ; height in high nybble\n'
+        '\tld c, a\n'
+        '\tld a, [wSpriteWidth]\n'
+        '\tsrl a\n'
+        '\tsrl a\n'
+        '\tsrl a                   ; width in tiles (low nybble)\n'
+        '\tld de, vBackPic\n'
+        '\tcall LoadUncompressedSpriteData ; centers w x h into the 7x7 buffer + merges\n'
+        '.copyToVRAM\n'
+        '\tld hl, vSprites\n')
+    if old not in s:
+        print("  !! LoadMonBackPic pattern not found in engine/battle/core.asm"); sys.exit(1)
+    write(p, s.replace(old, new, 1))
+    print("  applied native 48x48 back path (engine/battle/core.asm)")
 
 def size_pokedex_wram():
     """The Pokedex owned/seen arrays (2x flag_array NUM_POKEMON) grow with the
@@ -352,6 +413,7 @@ def trim_anim_slots():
 # ---- 0. engine patches (non-table edits) ----
 print("engine patches:")
 apply_engine_patch()
+patch_back_sprite_engine()
 size_pokedex_wram()
 relocate_growing_tables()
 
@@ -678,11 +740,13 @@ for m in MONS:
     fr = Image.open(os.path.join(PC, f"gfx/pokemon/{src}/front.png"))
     W = fr.width
     to_gray4(fr.crop((0, 0, W, W))).save(os.path.join(PY, f"gfx/pokemon/front/{m['f']}.png"))
-    # Back: RED PORT uses the vanilla 4x4 (32x32) back path — no init_battle
-    # engine edit needed. Gen 2 backs are 48x48; downscale to 32x32 (the engine
-    # then 2x-upscales at runtime). Slightly soft, but zero engine risk.
+    # Back: native 48x48 (6x6). Gen2/pokecrystal backs are already 48x48; keep them
+    # at full resolution instead of downscaling to 32x32 and re-upscaling at runtime
+    # (which blurred them). patch_back_sprite_engine()'s LoadMonBackPic edit detects
+    # the 6-tile width and renders these natively. pkmncompress emits a 0x66 dim byte
+    # for a 48x48 PNG, which is what that detection keys on.
     bk = Image.open(os.path.join(PC, f"gfx/pokemon/{src}/back.png"))
-    to_gray4(bk, size=(32, 32)).save(os.path.join(PY, f"gfx/pokemon/back/{m['f']}b.png"))
+    to_gray4(bk, size=(48, 48)).save(os.path.join(PY, f"gfx/pokemon/back/{m['f']}b.png"))
 print(f"  wrote {len(MONS)} front + {len(MONS)} back PNGs")
 
 # ---- 8. Gen2 moves + Dark/Steel types (MOVE_MODE simple/full) ----
