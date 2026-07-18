@@ -5,7 +5,7 @@
 [rom]
 path = "pokeyellow/pokeyellow.gbc"        # the injected ROM (build it first)
 output_dir = "recomp"
-runtime_dir = "../../gb-recompiled/runtime"  # relative to the generated dir (recomp/)
+runtime_dir = "../gb-recompiled/runtime"  # relative to the generated dir (recomp/)
 # The prefix tags every derived filename (Pokemon_Yellow_Extended.exe and its
 # save Pokemon_Yellow_Extended.sav) so the EXTENDED build never collides with the
 # STOCK build (pokeyellow_stock_recomp.toml -> Pokemon_Yellow_Stock.*).
