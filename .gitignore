@@ -57,3 +57,7 @@ __pycache__/
 # launcher build artifacts (built locally from launcher/yellow.c)
 /yellow.exe
 /yellow.cfg
+
+# regenerated recomp output + pre-launcher backup (build trees)
+pokeyellow_recomp_output/
+pokeyellow_recomp_output_pre_launcher/
